@@ -7,7 +7,7 @@ a folder in Files and the clipboard. It's the editor of the same commit, so it c
 ## Install
 
 **SideStore / AltStore (no Mac needed after setup).** Download the newest `FM1-Chord-iPad-….ipa` from the
-[**ipad** release](https://github.com/TwistedGenetics/FM1-Chord-/releases/tag/ipad) on the iPad, open SideStore (or
+[**ipad** release](https://github.com/TwistedGenetics/FM1-Chord/releases/tag/ipad) on the iPad, open SideStore (or
 AltStore), tap **+** and pick the file. They sign it with your Apple ID. With a free Apple ID it lasts 7 days:
 SideStore refreshes it on the iPad, AltStore from a computer on your network.
 

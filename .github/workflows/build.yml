@@ -177,9 +177,9 @@ jobs:
 
             **Beta: not yet tested on a real FM-1.** Installing custom firmware is at your own risk. Read [RECOVERY.md](https://github.com/${{ github.repository }}/blob/main/docs/RECOVERY.md) before you install.
 
-            **Install:** download `FM1-Chord-${{ steps.ver.outputs.version }}.fwsc`, then open the [web flasher](https://twistedgenetics.github.io/FM1-Chord-/flasher/) in Chrome or Edge with the FM-1 on USB, back up, and pick the file (or choose this release from its list).
+            **Install:** download `FM1-Chord-${{ steps.ver.outputs.version }}.fwsc`, then open the [web flasher](https://twistedgenetics.github.io/FM1-Chord/flasher/) in Chrome or Edge with the FM-1 on USB, back up, and pick the file (or choose this release from its list).
 
-            **Editor:** [twistedgenetics.github.io/FM1-Chord-/editor](https://twistedgenetics.github.io/FM1-Chord-/editor/). What's new: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
+            **Editor:** [twistedgenetics.github.io/FM1-Chord/editor](https://twistedgenetics.github.io/FM1-Chord/editor/). What's new: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
       - name: Redeploy the flasher site (lists this release)
         if: steps.have.outputs.skip != '1'
         env:

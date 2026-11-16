@@ -6,13 +6,13 @@ editor (also an iPad app) that suggests what to play next.
 
 **Status: 0.1 beta, not yet tried on a real FM-1.** Read [docs/RECOVERY.md](docs/RECOVERY.md) before installing.
 
-- **Editor:** [twistedgenetics.github.io/FM1-Chord-/editor](https://twistedgenetics.github.io/FM1-Chord-/editor/) —
+- **Editor:** [twistedgenetics.github.io/FM1-Chord/editor](https://twistedgenetics.github.io/FM1-Chord/editor/) —
   works without the FM-1, in any modern browser including Safari on iPad (sound, suggestions, progressions, MIDI
   files). Talking to the FM-1 needs Chrome / Edge on a computer, or the iPad app.
-  [Demo with a simulated FM-1](https://twistedgenetics.github.io/FM1-Chord-/editor/?demo).
-- **Flasher:** [twistedgenetics.github.io/FM1-Chord-/flasher](https://twistedgenetics.github.io/FM1-Chord-/flasher/)
-- **Firmware:** `FM1-Chord-X.Y.fwsc` on [Releases](https://github.com/TwistedGenetics/FM1-Chord-/releases/latest)
-- **iPad app:** the `.ipa` on the [ipad release](https://github.com/TwistedGenetics/FM1-Chord-/releases/tag/ipad)
+  [Demo with a simulated FM-1](https://twistedgenetics.github.io/FM1-Chord/editor/?demo).
+- **Flasher:** [twistedgenetics.github.io/FM1-Chord/flasher](https://twistedgenetics.github.io/FM1-Chord/flasher/)
+- **Firmware:** `FM1-Chord-X.Y.fwsc` on [Releases](https://github.com/TwistedGenetics/FM1-Chord/releases/latest)
+- **iPad app:** the `.ipa` on the [ipad release](https://github.com/TwistedGenetics/FM1-Chord/releases/tag/ipad)
   (SideStore / AltStore) — see [ios/README.md](ios/README.md)
 
 ## What it does
@@ -41,7 +41,7 @@ exported as a MIDI file; sets saved in the browser, as `.chordset` files and on 
 ## Install
 
 1. Back up what's on the FM-1 ([docs/RECOVERY.md](docs/RECOVERY.md), "Before every install").
-2. Open the [flasher](https://twistedgenetics.github.io/FM1-Chord-/flasher/) in Chrome or Edge with the FM-1 on USB,
+2. Open the [flasher](https://twistedgenetics.github.io/FM1-Chord/flasher/) in Chrome or Edge with the FM-1 on USB,
    pick the newest release, Install. Don't unplug until it says Done.
 
 ## Build
@@ -49,7 +49,7 @@ exported as a MIDI file; sets saved in the browser, as `.chordset` files and on 
 Every push builds in GitHub Actions (`.github/workflows/build.yml`). Locally on Linux x86-64:
 
 ```sh
-git clone --recurse-submodules https://github.com/TwistedGenetics/FM1-Chord-.git && cd FM1-Chord-
+git clone --recurse-submodules https://github.com/TwistedGenetics/FM1-Chord.git && cd FM1-Chord-
 sh tests/run_host.sh                         # host tests: cc, python3 (Pillow, fonttools), node
 eval "$(tools/get_deps.sh)"                  # JieLi toolchain + 3 AC79 SDK files
 python3 tools/build_fm1.py --release 0.1     # -> build/fm1/FM1-Chord-0.1.fwsc

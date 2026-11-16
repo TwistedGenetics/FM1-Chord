@@ -9,7 +9,7 @@ import WebKit
 
 final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
     static let scheme = "fm1chord"
-    static let site = URL(string: "https://twistedgenetics.github.io/FM1-Chord-/")!
+    static let site = URL(string: "https://twistedgenetics.github.io/FM1-Chord/")!
     private let root: URL
     private var live = Set<ObjectIdentifier>()                        // (tasks not yet stopped by WebKit)
 

@@ -79,7 +79,7 @@ Steps:
 ### 3. Back to normal
 
 - Check the FM-1 starts on the stock screen and appears on USB as an FM-1.
-- Install FM1-Chord with the [web flasher](https://twistedgenetics.github.io/FM1-Chord-/flasher/) (Chrome or Edge),
+- Install FM1-Chord with the [web flasher](https://twistedgenetics.github.io/FM1-Chord/flasher/) (Chrome or Edge),
   following "Before every install" below.
 
 ### The stock firmware file
