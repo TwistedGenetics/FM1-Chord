@@ -25,10 +25,15 @@ MIDI clock), latch, auto voice leading, velocity humanise, transpose. The screen
 name, its inversion and voicing, the octave.
 
 **The synth:** ten voices, two oscillators (saw, square, triangle, sine, organ, pulse) with detune, a sub and FM, a
-12 dB filter with its own envelope, an amp envelope, a Juno-style stereo chorus and a reverb. Eight sounds to start
-from: warm pad, dark pad, liquid keys, neuro stab, rave stab, garage organ, glass keys, strings.
+12 dB filter with its own envelope, an amp envelope, a Juno-style stereo chorus and a reverb. Eleven sounds to start
+from: warm pad, dark pad, liquid keys, neuro stab, rave stab, garage organ, glass keys, strings, void pad, dub chord,
+bell stab.
 
-**Factory sets:** DARK JUNGLE MIN, LIQUID DNB, NEURO STABS, DEEP GARAGE, 90S RAVE STABS, plus 20 empty user slots.
+**Factory sets (18):** DARK JUNGLE MIN, LIQUID DNB, NEURO STABS, DEEP GARAGE, 90S RAVE STABS, and thirteen in F built
+on Phrygian progressions: F PHRYGIAN DARK, HALFSTEP DREAD, FM ANDALUSIAN, F PHRYG DOMINANT, DUB PHRYGIAN, LIQUID
+PHRYGIAN, NEURO PHRYGIAN, HORROR PHRYGIAN, GARAGE PHRYGIAN, PHRYGIAN ARPS, PHRYGIAN STRUMS, RAVE PHRYGIAN, PHRYGIAN
+SPACE. In those, each key plays the chord on its own note where F Phrygian has one (F: Fm, F#: Gb, G#: Ab, A#: Bbm,
+C: C°, C#: Db, D#: Ebm); the other keys hold colour chords (slash, sus, borrowed). Plus 20 empty user slots.
 
 **The editor:** a keyboard (or big tiles) showing the chord on each key; chord editing; an in-browser preview that is
 the FM-1's own synth and player in JavaScript (checked note for note against the firmware's C); **suggestions**

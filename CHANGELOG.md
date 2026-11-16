@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2
+
+- Thirteen new factory sets in F built on Phrygian progressions (i → bII, the half-step dread, Andalusian, Phrygian
+  dominant, dub, liquid, neuro, horror, garage, arps, strums, rave, space). Each key plays the chord on its own note
+  where F Phrygian has one; the keys between hold colour chords.
+- Three new sounds: VOID PAD, DUB CHORD, BELL STAB.
+
 ## 0.1 (beta, not yet tried on a real FM-1)
 
 Build order steps 0–4, and step 5 in the editor.

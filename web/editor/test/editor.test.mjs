@@ -61,6 +61,7 @@ test("synth: sound for every factory set, silence after release", () => {
     assert.ok(peak > 0.02 && peak <= 1, `${st.name} peak ${peak}`);
     assert.ok(!Number.isNaN(L[0]));
     e.message({ type: "key", key: 0, vel: 0 });
+    if (st.play.latch) e.message({ type: "key", key: 0, vel: 100 });   // latched: the same key again stops it
     for (let i = 0; i < 48000 * 20 / 128; i++) e.process(L, R, 128);
     assert.equal(e.synth.active(), 0, st.name);
   }
