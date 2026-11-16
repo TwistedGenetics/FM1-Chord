@@ -1,0 +1,187 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# FM1-Chord firmware build (after DREADNOUGHT's). Every push / PR builds the firmware and runs the tests.
+# Releases: the version is in the VERSION file (X.Y; the FM-1 package identity is FM-1_9XXYY00, X0X's scheme).
+# A push to main publishes the Release vX.Y with FM1-Chord-X.Y.fwsc if it doesn't exist yet; once it does, later
+# pushes leave it alone (work in progress never replaces a published file: bump VERSION for the next one). Running
+# this workflow on a vX.Y tag (or pushing one) rebuilds that Release's files from the tag; so does pushing a branch
+# rebuild-vX.Y made of that release's commit plus this workflow file. The flasher site is then redeployed.
+#
+# FM1-Chord's own app, chord core and synth on X0X's platform (the x0x-firmware submodule, pinned), built the way
+# DREADNOUGHT and Carnac OS build (tools/build_fm1.py). See docs/UPSTREAM.md.
+name: build
+
+on:
+  push:
+    branches: [main, "rebuild-v*"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python packages (the font, the measurements)
+        run: pip install Pillow fonttools numpy
+
+      - name: Cache JieLi toolchain and SDK files
+        uses: actions/cache@v4
+        with:
+          path: ~/.fm1chord-deps
+          key: jieli-deps-${{ runner.os }}-${{ hashFiles('tools/get_deps.sh') }}
+
+      - name: Toolchain and SDK files
+        run: tools/get_deps.sh ~/.fm1chord-deps
+
+      - name: Read the version
+        id: ver
+        run: |
+          v=$(tr -d ' \n' < VERSION)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          case "${GITHUB_REF_NAME}" in rebuild-v*) [ "${GITHUB_REF_NAME}" = "rebuild-v$v" ] || { echo "::error title=Version::branch ${GITHUB_REF_NAME}, but VERSION says $v"; exit 1; } ;; esac
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME}" != "v$v" ]; then
+            echo "::error title=Version::tag ${GITHUB_REF_NAME}, but VERSION says $v"; exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Host tests (the chord core and synth measured, the editor checked against them, the app on a simulated panel)
+        run: sh tests/run_host.sh
+
+      - name: Build the firmware package (with the start-up preflight and the miscompile check)
+        run: |
+          set -o pipefail
+          if ! python3 tools/build_fm1.py --release "${{ steps.ver.outputs.version }}" 2>&1 | tee build.log; then
+            msg=$(grep -E "error|FAIL|Error" build.log | head -30; echo ---; tail -25 build.log)
+            msg=${msg//'%'/'%25'}; msg=${msg//$'\n'/'%0A'}
+            echo "::error title=firmware build::$msg"
+            exit 1
+          fi
+
+      - name: The update loader cut off at every point of an install (DREADNOUGHT 0.43's test)
+        run: |
+          set -o pipefail
+          core=x0x-firmware/build/fm1chord/ldr_fw/loader/ldr_core.c
+          cc -O2 -std=c99 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter \
+            -DLDR_CORE="\"../../$core\"" tests/host/ldr_cut_test.c -o build/ldr_cut_test
+          if ! build/ldr_cut_test "build/fm1/FM1-Chord-${{ steps.ver.outputs.version }}.fwsc" 2>&1 | tee ldr.log; then
+            echo "::error title=update loader::$(grep -E 'FAIL' ldr.log | head -5 | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "::notice title=Update loader::$(tail -4 ldr.log | head -3 | tr '\n' ' ')"
+
+      - name: Collect the package
+        run: |
+          mkdir -p dist
+          pkg="build/fm1/FM1-Chord-${{ steps.ver.outputs.version }}.fwsc"
+          name="FM1-Chord-${{ steps.ver.outputs.version }}.fwsc"
+          cp "$pkg" "dist/$name"
+          cp build/fm1/sizes.md build/fm1/sizes.json dist/ 2>/dev/null || true
+          cd dist
+          sha256sum *.fwsc > SHA256SUMS
+          python3 - "$name" <<'EOF'
+          import sys, hashlib
+          d = open(sys.argv[1], "rb").read()
+          ident = "".join(chr((d[i * 0x30 + 0x2F] - i - 1) & 0xFF) for i in range(20) if d[i * 0x30 + 0x2F] != 0x7D)
+          print(f"::notice title=package::{sys.argv[1]} identity {ident}, {len(d)} bytes, sha256 {hashlib.sha256(d).hexdigest()[:16]}")
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-${{ github.sha }}
+          path: |
+            build/host/*.png
+            build/host/*.wav
+          if-no-files-found: ignore
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Flasher tests
+        run: node --test web/flasher/test/*.test.mjs web/editor/test/*.test.mjs
+
+  release:
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      startsWith(github.ref, 'refs/heads/rebuild-v')
+    needs: [firmware, web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: dist
+      - name: Version
+        id: ver
+        run: |
+          v=$(tr -d ' \n' < VERSION)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+      - name: "Already published? From main a release is never rebuilt from later code"
+        id: have
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${GITHUB_REF_NAME}" = main ] && gh api "repos/$GITHUB_REPOSITORY/releases/tags/${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Release::${{ steps.ver.outputs.tag }} is published already: left as it is"
+          fi
+      - name: Publish release
+        if: steps.have.outputs.skip != '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: FM1-Chord ${{ steps.ver.outputs.version }} beta
+          make_latest: true
+          files: |
+            dist/FM1-Chord-${{ steps.ver.outputs.version }}.fwsc
+            dist/SHA256SUMS
+          body: |
+            FM1-Chord — a chord player firmware for the **M-VAVE FM-1**: a chord on every key, a synth made for chords, MIDI out, strum, arpeggio, latch and voice leading. Its own app on X0X's proven FM-1 platform.
+
+            **Beta: not yet tested on a real FM-1.** Installing custom firmware is at your own risk. Read [RECOVERY.md](https://github.com/${{ github.repository }}/blob/main/docs/RECOVERY.md) before you install.
+
+            **Install:** download `FM1-Chord-${{ steps.ver.outputs.version }}.fwsc`, then open the [web flasher](https://twistedgenetics.github.io/FM1-Chord-/flasher/) in Chrome or Edge with the FM-1 on USB, back up, and pick the file (or choose this release from its list).
+
+            **Editor:** [twistedgenetics.github.io/FM1-Chord-/editor](https://twistedgenetics.github.io/FM1-Chord-/editor/). What's new: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
+      - name: Redeploy the flasher site (lists this release)
+        if: steps.have.outputs.skip != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main

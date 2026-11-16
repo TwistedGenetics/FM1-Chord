@@ -1,0 +1,140 @@
+# FM1-Chord: the panel end to end on the simulated FM-1
+wait 300
+expect set 64
+expect page 0
+shot boot.ppm
+wav basic.wav
+# DARK JUNGLE MIN, key 1: Fm9 (five notes)
+key 0 down
+wait 400
+expect key 0
+expect notes 5
+expect voices 5
+expect midiout 5
+shot play_fm9.ppm
+key 0 up
+wait 50
+expect key -1
+expect peak >2000
+# Gbmaj7 on key 2, voice-led from the Fm9
+tapkey 1 600
+# the octave buttons
+tap OCT+
+expect oct 1
+tapkey 7 400
+tap OCT-
+tap OCT-
+expect oct -1
+tap OCT+
+# edit key 1: Fm9 -> F11 type (one step on)
+key 0 down
+key 0 up
+tap EDIT
+expect page 1
+turn K2 1
+expect quality 7
+expect dirty 1
+shot edit.ppm
+turn K3 2
+expect inv 2
+tap EDIT
+expect page 2
+shot edit2.ppm
+# select key 4 with SELECT, learn F A C (an F major) on it
+turn SELECT 3
+expect sel 3
+tap REC
+expect page 10
+key 0 down
+key 4 down
+key 7 down
+wait 100
+shot learn.ppm
+key 0 up
+key 4 up
+key 7 up
+expect quality 0
+expect root 5
+tap REC
+# save to the first empty user slot
+tap SAVE
+expect page 9
+shot save.ppm
+tap SAVE
+expect set 0
+expect dirty 0
+expect page 0
+# it's still there after a restart
+reboot
+expect set 0
+expect sel 3
+expect quality 0
+# PRESET: the next set (user 1 is the last; round to the first factory set)
+turn PRESET 1
+expect set 64
+turn PRESET 2
+expect set 66
+shot neuro.ppm
+turn PRESET -2
+# strum, then the arpeggiator
+tap ARP
+expect page 6
+turn K1 1
+tapkey 0 500
+turn K1 1
+shot arp.ppm
+key 0 down
+wait 1000
+expect notes <3
+key 0 up
+wait 20
+expect notes 0
+turn K1 -2
+# latch
+tap LFO
+tapkey 2 100
+wait 300
+expect key 2
+tapkey 2 100
+expect key -1
+tap LFO
+# sound pages
+tap ENV
+expect page 3
+turn K2 -10
+shot sound.ppm
+tap ENV
+tap ENV
+expect page 5
+shot fx.ppm
+tap GLO
+shot global.ppm
+tap HOME
+# a MIDI keyboard plays the keys: F3 = key 1
+midi 90 35 64
+wait 50
+expect key 0
+midi 80 35 00
+wait 20
+expect key -1
+# the editor's commands
+sysex 28
+expect reply.0 70
+expect replylen >15
+sysex 29 7F
+expect reply.0 127
+expect reply.1 1
+expect replylen 386
+sysex 2B
+expect reply.0 20
+expect reply.1 1
+expect replylen 341
+sysex 2C 43
+expect reply.1 0
+expect set 67
+sysex 2C 13
+expect reply.1 1
+tap PLAY
+wait 2000
+wavstop
+expect voices 0

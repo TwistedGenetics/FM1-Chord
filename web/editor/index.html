@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f6f4ef">
+<title>FM1-Chord Editor</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">FM1-Chord <small>chord sets for the M-VAVE FM-1</small></div>
+  <div class="conn">
+    <button id="b-sound" class="sound">Sound on</button>
+    <span id="status" role="status" aria-live="polite">Not connected</span>
+  </div>
+  <div class="setbar">
+    <label class="lbl" for="lib">Chord set</label>
+    <select id="lib" aria-label="Chord set"></select>
+    <input id="setname" maxlength="16" aria-label="Set name" spellcheck="false" autocomplete="off">
+    <button id="b-save" class="primary">Save</button>
+    <button id="b-new">New</button>
+    <button id="b-dup">Copy</button>
+    <button id="b-del">Delete</button>
+    <button id="b-import">Open file</button>
+    <button id="b-export">Save file</button>
+    <input type="file" id="importfile" accept=".chordset,.json,application/json" hidden>
+  </div>
+</header>
+
+<main>
+  <section class="kbwrap" aria-label="The FM-1's keys">
+    <div class="kbhead">
+      <div class="octave">
+        <button id="oct-dn" aria-label="Octave down">OCT −</button>
+        <span id="oct-val">OCT 0</span>
+        <button id="oct-up" aria-label="Octave up">OCT +</button>
+      </div>
+      <div id="nowplaying" class="nowplaying" aria-live="polite">Tap a key</div>
+      <div class="kbview">
+        <button id="v-keys" class="on" aria-pressed="true">Keyboard</button>
+        <button id="v-grid" aria-pressed="false">Big tiles</button>
+      </div>
+    </div>
+    <div id="kb" class="kb"></div>
+  </section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="chord" class="on">Chord</button>
+    <button role="tab" data-tab="harmony">Suggestions</button>
+    <button role="tab" data-tab="sound">Sound</button>
+    <button role="tab" data-tab="play">Playing</button>
+    <button role="tab" data-tab="prog">Progression</button>
+    <button role="tab" data-tab="device">FM-1</button>
+  </nav>
+  <section id="panel" class="panel"></section>
+</main>
+
+<footer>
+  <a href="../flasher/">Firmware flasher</a> ·
+  <a href="https://github.com/TwistedGenetics/FM1-Chord-" target="_blank" rel="noopener">Source</a> ·
+  <a href="https://github.com/TwistedGenetics/FM1-Chord-/blob/main/docs/RECOVERY.md" target="_blank" rel="noopener">Recovery guide</a> ·
+  Free software, GPL-3.0. Not affiliated with M-VAVE.
+</footer>
+<div id="toast" class="toast" role="status" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

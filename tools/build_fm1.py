@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""Build FM1-Chord for the FM-1 on X0X's platform: app, update loader and an installable .fwsc.
+
+  python3 tools/build_fm1.py [--release X.Y] [--out DIR]
+
+DREADNOUGHT's tools/build_fm1.py (TwistedGenetics/DREADNOUGHT 0.44), adapted from Carnac OS's
+src/hardware/build_fm1.py (owenkirby/carnac-os, GPL-3.0-only). Reuses X0X's tools/build.py
+(the x0x-firmware submodule, pinned) whole: the update loader, the image layout, the package and its checks (entry
+stub, no soft doubles, RAM / pool sizes, register access only in hal/, which here covers our sources too). Only the
+app's units differ:
+
+  fm1chord_fm1.c  -Os  X0X's firmware/src/x0x.c up to its app (slots.c), then src/hardware/fc_main_fm1.c (which
+                       brings in src/app/fc_app.c and fc_editor.c); USB names FM1-Chord
+  fm1chord_dsp.c  -O2  every src/core/*.c and src/dsp/*.c (the chord core and the synth: the audio path)
+
+Then, before any package is kept: the start-up simulated on the host (tools/fm1_preflight.py) and the check for the
+JieLi compiler's indexed 64-bit store miscompile (Carnac, 2026-10-16).
+
+Needs the JieLi toolchain and the AC79 SDK files (tools/get_deps.sh): JIELI_TOOLCHAIN and AC79_SDK.
+"""
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+X0X = REPO / "x0x-firmware"
+
+
+def u16(s):
+    """a USB string descriptor's bytes, as C"""
+    b = [2 + 2 * len(s), 3]
+    for ch in s:
+        b += [f"'{ch}'", 0]
+    return "{" + ", ".join(str(x) for x in b) + "}"
+
+
+USB = [  # X0X's names -> ours (the flashers find the port by "FM-1" in the name)
+    ("static const uint8_t STR1[] = {8, 3, 'X', 0, '0', 0, 'X', 0};",
+     f"static const uint8_t STR1[] = {u16('TwistedGenetics')};"),
+    ("static const uint8_t STR2[] = {18, 3, 'X', 0, '0', 0, 'X', 0, ' ', 0, 'F', 0, 'M', 0, '-', 0, '1', 0};",
+     f"static const uint8_t STR2[] = {u16('FM1-Chord FM-1')};"),
+]
+
+
+def overlay(b, gen):
+    """the two unity files in the build dir; returns them"""
+    cut = []
+    for ln in (b.FW / "src" / "x0x.c").read_text().splitlines(keepends=True):
+        if ln.startswith('#include "app/slots.c"'):
+            break
+        cut.append(ln)
+    else:
+        raise SystemExit("build_fm1: x0x.c has no '#include \"app/slots.c\"' to cut at")
+    inc = lambda p: f'#include "{p.as_posix()}"\n'
+    # usb.c with our names: a copy next to the unity file, included in place of X0X's
+    usb = (b.FW / "src" / "usb.c").read_text()
+    for old, new in USB:
+        if usb.count(old) != 1:
+            raise SystemExit(f"build_fm1: X0X's usb.c changed, no '{old[:40]}...'")
+        usb = usb.replace(old, new)
+    (gen / "usb_fc.c").write_text(usb)
+    text = "".join(cut)
+    if text.count('#include "usb.c"') != 1:
+        raise SystemExit("build_fm1: x0x.c no longer includes usb.c once")
+    text = text.replace('#include "usb.c"', inc(gen / "usb_fc.c").rstrip())
+    main = gen / "fm1chord_fm1.c"
+    main.write_text(text + "/* ---- FM1-Chord (X0X's app cut away; tools/build_fm1.py) ---- */\n" +
+                    inc(REPO / "src" / "hardware" / "fc_main_fm1.c"))
+    dsp = gen / "fm1chord_dsp.c"
+    dsp.write_text("/* FM1-Chord's chord core and synth, one -O2 unit (tools/build_fm1.py) */\n" +
+                   "".join(inc(p) for p in sorted((REPO / "src" / "core").glob("*.c"))) +
+                   "".join(inc(p) for p in sorted((REPO / "src" / "dsp").glob("*.c"))))
+    return main, dsp
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--release", metavar="X.Y", help="the version: the package's identity FM-1_9XXYY00 and the screen")
+    ap.add_argument("--out", type=Path, default=REPO / "build" / "fm1", help="where the package goes")
+    a = ap.parse_args()
+    os.environ.setdefault("JIELI_TOOLCHAIN", "/opt/jieli/toolchain")
+    os.environ.setdefault("AC79_SDK", "/opt/fw-AC79_AIoT_SDK")
+    if not (X0X / "tools" / "build.py").exists():
+        raise SystemExit("build_fm1: no X0X tree in x0x-firmware/ (git submodule update --init)")
+    if b"\r\n" in (X0X / "tools" / "gen_builtin_break.sh").read_bytes():
+        raise SystemExit("build_fm1: x0x-firmware has CRLF line endings; clone with core.autocrlf=false")
+    ver = a.release or "DEV"
+    sys.path.insert(0, str(X0X / "tools"))
+    import build as b                                   # X0X's tools/build.py
+
+    fcgen = a.out / "gen"
+
+    def generate():                                     # the cut x0x.c needs only the font; we add ours and the presets
+        b.GEN.mkdir(parents=True, exist_ok=True)
+        fcgen.mkdir(parents=True, exist_ok=True)
+        for cmd in ([sys.executable, str(b.SRC / "tools" / "gen_font.py"), str(b.GEN / "felucca_font.h")],
+                    [sys.executable, str(REPO / "tools" / "gen_presets.py"), str(fcgen / "fc_presets.h")],
+                    [sys.executable, str(REPO / "tools" / "gen_fc_font.py"), str(fcgen / "fc_font.h")]):
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode:
+                sys.stderr.write(r.stdout + r.stderr)
+                raise SystemExit(f"build_fm1: {Path(cmd[1]).name} failed")
+
+    def build_app():
+        gen = b.OUT / "fm1chord"
+        gen.mkdir(parents=True, exist_ok=True)
+        main_c, dsp_c = overlay(b, gen)
+        inc = [f"-I{(REPO / d).as_posix()}" for d in ("src", "src/core", "src/app", "src/dsp", "src/hardware")]
+        flags = [*b.CFLAGS, *b.FPU, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen", f"-I{fcgen.as_posix()}", *inc,
+                 f'-DFELUCCA_ID="{b.PRODUCT}"', f'-DFC_VERSION="{ver} BETA"' if a.release else '-DFC_VERSION="DEV"']
+        o2 = [f if f != "-Os" else "-O2" for f in flags]
+        objs = [b.OUT / "crt0.o", b.OUT / "fm1_vec.o", b.OUT / "fm1_isr.o", b.OUT / "fm1_cpu1.o",
+                gen / "fm1chord_fm1.o", gen / "fm1chord_dsp.o"]
+        b.tc_all(("cc", "-c", b.FW / "crt0.S", "-o", objs[0]),
+                 ("cc", "-c", b.FW / "hal" / "fm1_vec.S", "-o", objs[1]),
+                 ("cc", "-c", b.FW / "hal" / "fm1_isr.S", "-o", objs[2]),
+                 ("cc", "-c", b.FW / "hal" / "fm1_cpu1.S", "-o", objs[3]),
+                 ("cc", *flags, "-c", main_c, "-o", objs[4]),
+                 ("cc", *o2, "-c", dsp_c, "-o", objs[5]))
+        return link(objs)
+
+    def link(objs):
+        # X0X's build_app from the link on, unchanged: borrowed with its compile step stubbed out (Carnac's way)
+        real_all, real_tc, real_o2 = b.tc_all, b.tc, b.O2_UNITS
+        first = [True]
+
+        def tc_all(*cmds):
+            if first[0]:                                # its compile batch: ours already ran
+                first[0] = False
+                return []
+            return real_all(*cmds)
+
+        def tc(tool, *args):
+            if tool == "pi32v2/bin/ld":                 # X0X's objects out, ours in
+                args = [x for x in args if not (isinstance(x, Path) and x.suffix == ".o")]
+                i = args.index("-o")
+                args = [*args[:i], *objs, *args[i:]]
+            return real_tc(tool, *args)
+        b.tc_all, b.tc, b.O2_UNITS = tc_all, tc, []
+        try:
+            return real_build_app()
+        finally:
+            b.tc_all, b.tc, b.O2_UNITS = real_all, real_tc, real_o2
+
+    real_mmio = b.mmio_check
+
+    def mmio_check():                                   # X0X's rule (registers only in hal/) over our sources too
+        fw = b.FW
+        errors = real_mmio()
+        shadow = b.OUT / "fm1chord" / "mmio"
+        shutil.rmtree(shadow, ignore_errors=True)
+        (shadow / "src").mkdir(parents=True)
+        shutil.copytree(fw / "hal", shadow / "hal")
+        for p in (REPO / "src").rglob("*.[ch]"):
+            d = shadow / "src" / p.relative_to(REPO / "src")
+            d.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(p, d)
+        b.FW = shadow
+        try:
+            return errors + real_mmio()
+        finally:
+            b.FW = fw
+
+    # X0X's loader with the header written last (tools/fc_patches.py LDR_CORE, DREADNOUGHT 0.43's fix), built from a copy of its tree
+    # first, on its own (X0X's main builds it beside the app, in another thread: b.FW must not change under that)
+    sys.path.insert(0, str(REPO / "tools"))
+    import fc_patches
+    fw = b.FW
+    shadow = b.OUT / "fm1chord" / "ldr_fw"
+    shutil.rmtree(shadow, ignore_errors=True)
+    for d in ("hal", "src", "loader"):
+        shutil.copytree(fw / d, shadow / d)
+    (shadow / "loader" / "ldr_core.c").write_text(fc_patches.ldr_core(fw / "loader"))
+    b.FW = shadow
+    try:
+        ota = b.build_loader()
+    finally:
+        b.FW = fw
+    if len(ota) > 7936:                                 # stock V15 stages a loader in 7,936 B below its record
+        raise SystemExit(f"build_fm1: the update loader's ota.bin is {len(ota)} B, over 7,936 B")
+
+    real_build_app = b.build_app
+    b.generate, b.build_app, b.mmio_check = generate, build_app, mmio_check
+    b.build_loader = lambda: ota
+    a.out.mkdir(parents=True, exist_ok=True)
+    for old in a.out.glob("*.fwsc"):                    # never leave an older package to be installed by mistake
+        old.unlink()
+    for old in b.OUT.glob("x0x*.fwsc"):
+        old.unlink()
+    sys.argv = [sys.argv[0]] + (["--release", a.release] if a.release else [])   # the identity: FM-1_9XXYY00
+    b.main()
+    built = sorted(b.OUT.glob("x0x*.fwsc"))
+    if len(built) != 1:
+        raise SystemExit(f"build_fm1: expected one package from X0X's build, found {[p.name for p in built]}")
+    pkg = built[0]
+    # the start-up, simulated on the host: no package unless RAM comes out as the program expects
+    r = subprocess.run([sys.executable, str(REPO / "tools" / "fm1_preflight.py"), str(b.OUT / "x0x.elf"),
+                        str(b.OUT / "x0x.bin"), str(REPO / "src" / "hardware" / "fc_main_fm1.c")])
+    if r.returncode:
+        pkg.unlink(missing_ok=True)
+        raise SystemExit("build_fm1: preflight FAILED: no package written (do not install this build)")
+    bad = [ln.strip() for ln in (b.OUT / "x0x.dis").read_text(errors="replace").splitlines()
+           if re.search(r"\bd\[r\d+\+r\d+<<\d\] = ", ln)]
+    if bad:
+        pkg.unlink(missing_ok=True)
+        raise SystemExit("build_fm1: %d indexed 64-bit store(s) (the JieLi miscompile Carnac found), e.g.\n  %s\n"
+                         "no package written: check that loop" % (len(bad), bad[0]))
+    print("  ok    no indexed 64-bit stores (the JieLi miscompile, Carnac 2026-10-16)")
+    name = f"FM1-Chord-{a.release}" if a.release else "fm1-chord-dev"
+    shutil.copy(pkg, a.out / f"{name}.fwsc")
+    for src, dst in ((b.OUT / "x0x.bin", "fm1chord.bin"), (b.OUT / "x0x.elf", "fm1chord.elf"),
+                     (b.OUT / "x0x.dis", "fm1chord.dis"), (b.OUT / "x0x.map", "fm1chord.map")):
+        if src.exists():
+            shutil.copy(src, a.out / dst)
+    sizes(b, a.out)
+    print(f"build_fm1: {a.out / (name + '.fwsc')}  identity {b.PRODUCT}")
+    return 0
+
+
+SLOT_MARGIN = 24 * 1024                                 # CI fails below this much free in the app slot
+
+
+def sizes(b, out):
+    """What the firmware really takes (the .fwsc is padded to the slot, so its size says nothing): the image
+    against the app slot, RAM (.data + .bss, the pool), the biggest symbols. Printed, written to sizes.md, and on
+    GitHub as notices and the job summary."""
+    import json
+    syms = b.tc("common/bin/objdump", "-t", b.OUT / "x0x.elf")
+    img = (b.OUT / "x0x.bin").stat().st_size
+    slot = b.APP_SLOT
+    sect, rows = {}, []
+    for ln in syms.splitlines():
+        m = re.match(r"^([0-9a-f]{8})\s.{7}\s(\S+)\s+([0-9a-f]{8})\s+(\S+)$", ln)
+        if not m:
+            continue
+        sz = int(m[3], 16)
+        if not sz:
+            continue
+        sect[m[2]] = sect.get(m[2], 0) + sz
+        rows.append((sz, m[2], m[4]))
+    rows.sort(reverse=True)
+
+    def sym(name):
+        mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
+        return int(mm.group(1), 16) if mm else 0
+    ram = sym("_bss_end") - 0x01C08000
+    pool = sym("_pool_end") - sym("_pool_start")
+    ours = sum(sz for sz, s, n in rows if s in (".text", ".rodata", ".data") and re.match(r"(fc_|FC_|ed_)", n))
+    rep = {"image": img, "slot": slot, "slot_free": slot - img, "ram_data_bss": ram, "ram_region": 98304,
+           "pool": pool, "pool_region": 0x54000, "sections": sect, "fm1chord_symbols": ours,
+           "top": [{"size": sz, "section": s, "name": n} for sz, s, n in rows[:40]]}
+    md = [f"## Firmware size ({b.PRODUCT})", "",
+          "| | used | of | free |", "|---|---|---|---|",
+          f"| App slot (code + constants) | {img:,} B | {slot:,} B | **{slot - img:,} B** |",
+          f"| RAM .data + .bss | {ram:,} B | 98,304 B | {98304 - ram:,} B |",
+          f"| RAM pool | {pool:,} B | {0x54000:,} B | {0x54000 - pool:,} B |", "",
+          "Sections: " + ", ".join(f"{k} {v:,} B" for k, v in sorted(sect.items(), key=lambda kv: -kv[1])[:8]), "",
+          "| size | section | symbol |", "|---|---|---|"] + [f"| {sz:,} | {s} | `{n}` |" for sz, s, n in rows[:40]]
+    (out / "sizes.md").write_text("\n".join(md) + "\n")
+    (out / "sizes.json").write_text(json.dumps(rep, indent=1))
+    print("\n".join(md[:8]))
+    if os.environ.get("GITHUB_ACTIONS"):
+        print(f"::notice title=App slot::{img} B of {slot} B used, {slot - img} B free")
+        print(f"::notice title=RAM::.data+.bss {ram} B of 98304; pool {pool} B of {0x54000} ({0x54000 - pool} free)")
+        print("::notice title=Biggest::" + "; ".join(f"{n} {s} {sz}" for sz, s, n in rows[:12]))
+        rr = [(sz, s, n) for sz, s, n in rows if s in (".data", ".bss", "COMMON")]
+        print("::notice title=Biggest in RAM::" + "; ".join(f"{n} {sz}" for sz, s, n in rr[:40]))
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+                f.write("\n".join(md) + "\n")
+    if slot - img < SLOT_MARGIN:
+        raise SystemExit(f"build_fm1: only {slot - img} B free in the app slot (< {SLOT_MARGIN})")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
