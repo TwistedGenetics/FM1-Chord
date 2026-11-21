@@ -100,6 +100,7 @@ def main():
         fcgen.mkdir(parents=True, exist_ok=True)
         for cmd in ([sys.executable, str(b.SRC / "tools" / "gen_font.py"), str(b.GEN / "felucca_font.h")],
                     [sys.executable, str(REPO / "tools" / "gen_presets.py"), str(fcgen / "fc_presets.h")],
+                    [sys.executable, str(REPO / "tools" / "gen_wavetables.py"), str(fcgen / "fc_wavetables.h")],
                     [sys.executable, str(REPO / "tools" / "gen_fc_font.py"), str(fcgen / "fc_font.h")]):
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode:

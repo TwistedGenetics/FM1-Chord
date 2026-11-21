@@ -8,6 +8,9 @@ cd "$(dirname "$0")/.."
 CC="${CC:-cc}"
 mkdir -p build/gen/x0x build/host
 python3 tools/gen_presets.py build/gen/fc_presets.h
+python3 tools/gen_wavetables.py build/gen/fc_wavetables.h
+python3 tools/gen_wavetables.py --js build/host/wavetables.js
+cmp -s build/host/wavetables.js web/editor/wavetables.js || { echo "FAIL web/editor/wavetables.js is stale: run tools/gen_wavetables.py --js web/editor/wavetables.js"; exit 1; }
 python3 tools/gen_fc_font.py build/gen/fc_font.h >/dev/null
 [ -f build/gen/x0x/felucca_font.h ] || python3 x0x-firmware/tools/gen_font.py build/gen/x0x/felucca_font.h >/dev/null
 # the firmware's own rules: C99, no doubles anywhere (-Wdouble-promotion), every warning an error

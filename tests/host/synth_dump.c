@@ -13,12 +13,12 @@ static int16_t dly[2u * FC_DLY_LEN];
 static fc_synth_t syn;
 static float buf[2u * 44100u * 5u / 2u];
 
-static void play(const fc_sound_t *o, const fc_sound2_t *x, float bpm)
+static void play(const fc_sound_t *o, const fc_sound2_t *x, const fc_sound3_t *t, float bpm)
 {
     static const uint8_t notes[5] = {45, 52, 55, 59, 60};
     uint32_t i, n = 44100u * 5u / 2u, w;
     fc_synth_init(&syn, rv, dly);
-    fc_synth_sound(&syn, o, x);
+    fc_synth_sound(&syn, o, x, t);
     fc_synth_tempo(&syn, bpm);
     for (i = 0; i < 5u; i++)
         fc_synth_on(&syn, notes[i], 100u - 10u * i);
@@ -45,7 +45,7 @@ int main(void)
     fc_sound2_t x;
     for (i = 0; i < FC_NSOUNDS; i++) {
         printf("%s:", FC_SOUNDS[i].name);
-        play(&FC_SOUNDS[i].snd, &FC_SOUNDS[i].sx, 140.f);
+        play(&FC_SOUNDS[i].snd, &FC_SOUNDS[i].sx, &FC_SOUNDS[i].s3, 140.f);
     }
     fc_sound2_default(&x);
     x.flt_mode = FC_F_BP;
@@ -75,8 +75,31 @@ int main(void)
         fc_sound_t o = FC_SOUNDS[3].snd;
         o.wave_a = FC_W_PULSE;
         o.wave_b = FC_W_SQUARE;
+        fc_sound3_t t;
+        fc_sound3_default(&t);
         printf("EVERYTHING:");
-        play(&o, &x, 170.f);
+        play(&o, &x, &t, 170.f);
+        /* 0.7: supersaw A and a wavetable B in sync, crushed, wobbling, chorus II, phaser */
+        o.wave_a = FC_W_SUPERSAW;
+        o.wave_b = FC_W_WT_DIGI;
+        t.wt_pos = 40;
+        t.spread = 90;
+        t.osc_mode = FC_O_SYNC;
+        t.b_semi = 7;
+        t.crush_bits = 70;
+        t.crush_rate = 40;
+        t.wobble = 60;
+        t.fx = (uint8_t)(FC_C_II << 6 | 40u);
+        x.mod[5] = (fc_mod_t){FC_MS_LFO1, FC_MD_WTPOS, 60};
+        x.mod[4] = (fc_mod_t){FC_MS_MENV, FC_MD_BPITCH, 50};
+        printf("EVERYTHING 2:");
+        play(&o, &x, &t, 170.f);
+        o.wave_a = FC_W_WT_VOX;
+        o.wave_b = FC_W_NOISE;
+        t.osc_mode = FC_O_RING;
+        t.fx = (uint8_t)(FC_C_I_II << 6 | 63u);
+        printf("EVERYTHING 3:");
+        play(&o, &x, &t, 120.f);
     }
     return 0;
 }

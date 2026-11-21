@@ -6,9 +6,11 @@
 #include <stdint.h>
 #include "fc_chord.h"
 
-#define FC_SET_VERSION 2u          /* 2 (0.6): fc_sound2_t on the end; a version 1 set is the first 336 bytes */
-#define FC_SET_BYTES 376u
+#define FC_SET_VERSION 3u          /* 2 (0.6): fc_sound2_t on the end; 3 (0.7): fc_sound3_t after it. A version 1
+                                    * set is the first 336 bytes, a version 2 set the first 376 */
+#define FC_SET_BYTES 384u           /* ten to a store object: 3840 bytes, PLAT_STORE_MAX exactly */
 #define FC_SET_BYTES_V1 336u
+#define FC_SET_BYTES_V2 376u
 #define FC_NUSER 20u                /* user sets on the FM-1: 10 in OBJ_PAT0, 10 in OBJ_PAT1 */
 #define FC_FACTORY0 128u            /* set numbers: 0..19 user sets, 128 + n factory set n (to 254) */
 
@@ -25,7 +27,11 @@ typedef struct {
     uint8_t chorus, rev_mix, rev_size;
     uint8_t level, vel_sens;
 } fc_sound_t;
-enum { FC_W_SAW, FC_W_SQUARE, FC_W_TRI, FC_W_SINE, FC_W_ORGAN, FC_W_PULSE, FC_NW };
+enum { FC_W_SAW, FC_W_SQUARE, FC_W_TRI, FC_W_SINE, FC_W_ORGAN, FC_W_PULSE,
+       FC_W_SUPERSAW, FC_W_NOISE,              /* 0.7: seven detuned saws (spread: fc_sound3_t), white noise */
+       FC_W_WT_VOX, FC_W_WT_PWM, FC_W_WT_DIGI, FC_W_WT_GLASS,   /* 0.7: wavetables, swept by the WT position */
+       FC_NW };
+#define FC_W_WT0 FC_W_WT_VOX
 
 /* the synth voice, part 2 (0.6): filter modes, drive, two LFOs, a mod envelope, a mod matrix, macros, delay.
  * 40 bytes. A modulation: what moves (FC_MS_*), what it moves (FC_MD_*), how far (-127..127). */
@@ -56,7 +62,24 @@ enum { FC_MS_NONE, FC_MS_LFO1, FC_MS_LFO2, FC_MS_MENV, FC_MS_VEL, FC_MS_KEY, FC_
        FC_NMS };
 /* matrix destinations. 1..11 for each voice; 12..15 for the whole synth (moved by the LFOs and macros only) */
 enum { FC_MD_NONE, FC_MD_PITCH, FC_MD_CUT, FC_MD_RES, FC_MD_BLEV, FC_MD_FM, FC_MD_PW, FC_MD_AMP, FC_MD_DETUNE,
-       FC_MD_SUB, FC_MD_DRIVE, FC_MD_FENV, FC_MD_L1RATE, FC_MD_DLYMIX, FC_MD_REVMIX, FC_MD_CHORUS, FC_NMD };
+       FC_MD_SUB, FC_MD_DRIVE, FC_MD_FENV, FC_MD_L1RATE, FC_MD_DLYMIX, FC_MD_REVMIX, FC_MD_CHORUS,
+       FC_MD_WTPOS, FC_MD_SPREAD, FC_MD_BPITCH,  /* 0.7: for each voice again */
+       FC_NMD };
+#define FC_MD_GLOBAL(d) ((d) >= FC_MD_L1RATE && (d) <= FC_MD_CHORUS)
+
+/* the synth voice, part 3 (0.7): 8 bytes */
+typedef struct {
+    uint8_t wt_pos;                 /* where the wavetables play from, 0..127 */
+    uint8_t spread;                 /* the supersaw's detune, 0..127 */
+    uint8_t osc_mode;               /* FC_O_*: B added, B hard-synced to A, or A ring-modulated by B */
+    int8_t b_semi;                  /* B's tuning, -24..24 semitones */
+    uint8_t crush_bits;             /* 0 off, 1..127: 16 down to 3 bits */
+    uint8_t crush_rate;             /* 0 off, 1..127: 44.1 kHz down to about 1.4 kHz */
+    uint8_t wobble;                 /* tape wow and flutter, 0..127 */
+    uint8_t fx;                     /* bits 7..6 the chorus's mode (FC_C_*), 5..0 the phaser 0..63 */
+} fc_sound3_t;
+enum { FC_O_ADD, FC_O_SYNC, FC_O_RING, FC_NOMODE };
+enum { FC_C_I, FC_C_II, FC_C_I_II, FC_NCMODE };
 /* beat divisions, shortest first: a synced LFO's rate 0..127 runs 8 bars .. 1/32; the delay's time 1/32 .. 1 bar */
 #define FC_NDIV 15u
 enum { FC_D_32, FC_D_16T, FC_D_16, FC_D_8T, FC_D_16D, FC_D_8, FC_D_4T, FC_D_8D, FC_D_4, FC_D_4D, FC_D_2, FC_D_1,
@@ -95,12 +118,14 @@ typedef struct {
     fc_chord_t ch[FC_NKEYS];
     uint8_t reserved[2];
     fc_sound2_t sx;                 /* from version 2 */
+    fc_sound3_t s3;                 /* from version 3 */
 } fc_set_t;
 _Static_assert(sizeof(fc_sound_t) == 24, "fc_sound_t is 24 bytes");
 _Static_assert(sizeof(fc_play_t) == 16, "fc_play_t is 16 bytes");
 _Static_assert(sizeof(fc_chord_t) == 10, "fc_chord_t is 10 bytes");
 _Static_assert(sizeof(fc_sound2_t) == 40, "fc_sound2_t is 40 bytes");
-_Static_assert(sizeof(fc_set_t) == FC_SET_BYTES, "fc_set_t is 376 bytes");
+_Static_assert(sizeof(fc_sound3_t) == 8, "fc_sound3_t is 8 bytes");
+_Static_assert(sizeof(fc_set_t) == FC_SET_BYTES, "fc_set_t is 384 bytes");
 
 /* scales, as the editor names them (the FM-1 only stores the number) */
 enum { FC_SC_MAJOR, FC_SC_MINOR, FC_SC_DORIAN, FC_SC_PHRYGIAN, FC_SC_LYDIAN, FC_SC_MIXOLYDIAN, FC_SC_LOCRIAN,
@@ -116,7 +141,8 @@ typedef struct {
     uint8_t clock;                  /* 0 internal, 1 MIDI clock in */
     uint8_t velocity;               /* the keys' velocity, 1..127 */
     uint8_t midi_in_ch;             /* 0..15, 16 any: notes in play the chord keys (F3 = key 1) */
-    uint8_t reserved[7];
+    uint8_t voices;                 /* 0.7: the synth's polyphony, 4..10 (0 = 10): fewer if the FM-1 runs out of time */
+    uint8_t reserved[6];
 } fc_globals_t;
 _Static_assert(sizeof(fc_globals_t) == 16, "fc_globals_t is 16 bytes");
 
@@ -126,4 +152,5 @@ void fc_globals_init(fc_globals_t *g);
 int fc_globals_check(fc_globals_t *g);
 void fc_sound_default(fc_sound_t *s);
 void fc_sound2_default(fc_sound2_t *x);                  /* nothing moving, no delay: a version 1 set's sound */
+void fc_sound3_default(fc_sound3_t *x);                  /* plain: no sync, crush, wobble or phaser */
 uint32_t fc_set_used_keys(const fc_set_t *s);            /* bit k: key k has a chord */

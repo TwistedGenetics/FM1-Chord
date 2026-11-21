@@ -2,11 +2,11 @@
 // FM1-Chord: talking to the FM-1 over MIDI (Web MIDI with SysEx in Chrome / Edge; in the iPad app, CoreMIDI behind
 // the same API). The frames are Felucca's editor frames, F0 7D 46 4C cmd ... F7, with FM1-Chord's commands
 // (docs/PROTOCOL.md; src/app/fc_editor.c answers them). Copyright (C) 2026 Jamie (TwistedGenetics).
-import { encodeSet, decodeSet, pack7, unpack7, SET_BYTES, SET_BYTES_V1 } from "./setcodec.js";
+import { encodeSet, decodeSet, pack7, unpack7, SET_BYTES, SET_BYTES_V1, SET_BYTES_V2 } from "./setcodec.js";
 
 export const CMD = { INFO: 40, SET_GET: 41, SET_PUT: 42, NAMES: 43, SELECT: 44, KEY: 45, GLOBALS_GET: 46, GLOBALS_PUT: 47, EVT: 48 };
 export const WORKING = 127, FACTORY0 = 128, NUSER = 20;
-// protocol 2 (0.3): set numbers are two 7-bit bytes, hi lo; 3 (0.6): sets are 376 bytes (older firmware gets 336)
+// protocol 2 (0.3): set numbers are two 7-bit bytes, hi lo; 3 (0.6): sets are 376 bytes; 4 (0.7): 384 (older firmware gets the size it knows)
 const slot2 = (s) => [(s >> 7) & 0x7f, s & 0x7f];
 const HDR = [0xf0, 0x7d, 0x46, 0x4c];
 export const FM1_PORT = /fm-?1|fm1-chord|felucca|sloop|dreadnought|x0x/i;
@@ -84,6 +84,7 @@ export class Device {
   async putSet(slot, set) {
     let bytes = encodeSet(set);
     if (this.info && this.info.proto < 3) { bytes = bytes.slice(0, SET_BYTES_V1); bytes[2] = 1; }   // 0.3 .. 0.5 firmware
+    else if (this.info && this.info.proto === 3) { bytes = bytes.slice(0, SET_BYTES_V2); bytes[2] = 2; }   // 0.6
     const b = await this.send(CMD.SET_PUT, [...slot2(slot), ...pack7(bytes)], true, 6000);
     if (((b[0] << 7) | b[1]) !== slot || b[2] !== 0) throw new Error(["", "the FM-1 said the data was the wrong size", "the FM-1 refused the set",
       "the FM-1 couldn't write its flash", "no such slot"][b[2]] || `error ${b[2]}`);

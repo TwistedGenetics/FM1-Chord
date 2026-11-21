@@ -5,8 +5,8 @@
 enum { FC_ED_INFO = 40, FC_ED_SET_GET, FC_ED_SET_PUT, FC_ED_NAMES, FC_ED_SELECT, FC_ED_KEY, FC_ED_GLOB_GET,
        FC_ED_GLOB_PUT, FC_ED_EVT /* 48: sent by the FM-1 (live sync), never asked for */ };
 #define FC_ED_WORKING 127u
-#define FC_ED_PROTO 3u               /* 2 (0.3): set numbers are two bytes, hi lo (factory sets from 128);
-                                      * 3 (0.6): sets are 376 bytes (a 336-byte version 1 set is still taken) */
+#define FC_ED_PROTO 4u               /* 2 (0.3): set numbers are two bytes, hi lo (factory sets from 128);
+                                      * 3 (0.6): sets are 376 bytes; 4 (0.7): 384 (older sizes are still taken) */
 
 int fc_ed_long(uint32_t cmd) { return cmd == FC_ED_SET_PUT || cmd == FC_ED_GLOB_PUT; }
 
@@ -77,8 +77,10 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
         put(a[0]);
         put(a[1]);
         i = fc_ed_unpack(a + 2, na - 2u, (uint8_t *)&t, FC_SET_BYTES);
-        if (i == FC_SET_BYTES_V1)                /* an older editor's set: its sound gets part 2's defaults */
+        if (i == FC_SET_BYTES_V1)                /* an older editor's set: its sound gets the newer parts' defaults */
             t.version = 1;
+        else if (i == FC_SET_BYTES_V2)
+            t.version = 2;
         else if (i != FC_SET_BYTES) {
             put(1);
             return 1;
@@ -110,7 +112,7 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
                 fc_synth_all_off(&fc_syn);
             }
             fc_set = t;
-            fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx);
+            fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx, &fc_set.s3);
             fc_synth_tempo(&fc_syn, (float)fc_set.tempo);
             fc_unlock();
             fc_dirty = s == FC_ED_WORKING;

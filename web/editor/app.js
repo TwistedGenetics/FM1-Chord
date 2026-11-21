@@ -505,13 +505,17 @@ function pasteDialog() {
 }
 
 // ---- sound ----
-const WAVE_LABELS = ["Saw", "Square", "Triangle", "Sine", "Organ", "Pulse"];
+const WAVE_LABELS = ["Saw", "Square", "Triangle", "Sine", "Organ", "Pulse", "Supersaw", "Noise", "WT Vox",
+  "WT PWM", "WT Digital", "WT Glass"];
+// sampler-era settings for the crusher: bits and rate bytes (fc_sound3_t)
+const ERAS = [["Clean", 0, 0], ["SP-1200", 39, 19], ["MPC60", 39, 4], ["S950", 39, 12], ["Amiga", 78, 16]];
 // the sound's part 2 (0.6): macros, filter mode and drive, LFOs, the mod envelope, the matrix, the delay
 const FMODE_LABELS = ["Low-pass", "Band-pass", "High-pass", "Notch"];
 const LWAVE_LABELS = ["Sine", "Triangle", "Saw", "Square", "Random (S&H)"];
 const MSRC_LABELS = ["—", "LFO 1", "LFO 2", "Mod envelope", "Velocity", "Key (pitch)", "Macro 1", "Macro 2", "Macro 3", "Macro 4"];
 const MDST_LABELS = ["—", "Pitch", "Cutoff", "Resonance", "Osc B level", "FM amount", "Pulse width", "Volume", "Detune",
-  "Sub level", "Drive", "Filter env amount", "LFO 1 speed", "Delay mix", "Reverb mix", "Chorus"];
+  "Sub level", "Drive", "Filter env amount", "LFO 1 speed", "Delay mix", "Reverb mix", "Chorus", "WT position",
+  "Supersaw spread", "Osc B pitch"];
 const DIV_LABELS = DIVS;
 function lfoRateText(x, i, v) {
   if (x.lfo_sync[i]) return DIV_LABELS[14 - ((v * 15) >> 7)];
@@ -521,6 +525,39 @@ function lfoRateText(x, i, v) {
 function macroName(x, i) {                         // what the macro moves first: its label on the FM-1 too
   const m = x.mod.find((q) => q.src === 6 + i && q.dst && q.amt);
   return m ? MDST_LABELS[m.dst] : "not used";
+}
+function s3Html(t, pct) {
+  const bits = (v) => (v ? `${16 - Math.round((v * 13) / 127)}-bit` : "off");
+  const rate = (v) => (v ? `${(44.1 * Math.pow(2, (-v * 5) / 127)).toFixed(1)}k` : "off");
+  const era = ERAS.findIndex(([, b, r]) => b === t.crush_bits && r === t.crush_rate);
+  return `
+    <div class="cols">
+      <div><h3>Oscillators, more</h3>
+        ${slider("t-wt_pos", "WT position", t.wt_pos, 0, 127, pct)}
+        ${slider("t-spread", "Supersaw spread", t.spread, 0, 127, pct)}
+        ${slider("t-b_semi", "Osc B tune", t.b_semi, -24, 24, (v) => (v > 0 ? "+" : "") + v + " st")}
+        <div class="field"><label>Osc B</label>${seg(["Added", "Synced to A", "Ring mod"], t.osc_mode, "omode")}</div>
+        <p class="hint">Synced and ring: <b>B level</b> fades from plain A to the effect. Wavetables sweep with WT position (try an LFO on it).</p>
+      </div>
+      <div><h3>Lo-fi</h3>
+        <div class="field"><label>Era</label>${seg(ERAS.map((e) => e[0]), era, "era")}</div>
+        ${slider("t-crush_bits", "Bits", t.crush_bits, 0, 127, bits)}
+        ${slider("t-crush_rate", "Sample rate", t.crush_rate, 0, 127, rate)}
+        ${slider("t-wobble", "Tape wobble", t.wobble, 0, 127, pct)}
+        <h3>Chorus mode and phaser</h3>
+        ${seg(["Chorus I", "Chorus II", "Chorus I+II"], t.chorus_mode, "cmode")}
+        ${slider("t-phaser", "Phaser", t.phaser, 0, 63, (v) => Math.round((v * 100) / 63))}
+      </div>
+    </div>`;
+}
+function bindS3(p, t) {
+  const redo = () => { markDirty(); renderPanel(); audition(st.sel); };
+  p.querySelectorAll("[data-omode]").forEach((b) => (b.onclick = () => { t.osc_mode = +b.dataset.omode; redo(); }));
+  p.querySelectorAll("[data-cmode]").forEach((b) => (b.onclick = () => { t.chorus_mode = +b.dataset.cmode; redo(); }));
+  p.querySelectorAll("[data-era]").forEach((b) => (b.onclick = () => {
+    const e = ERAS[+b.dataset.era]; t.crush_bits = e[1]; t.crush_rate = e[2]; redo();
+  }));
+  bindSliders(p, "t-", t, () => {});
 }
 function sx2Html(x, pct, time) {
   const amt = (v) => (v > 0 ? "+" : "") + Math.round((v * 100) / 127) + "%";
@@ -624,13 +661,15 @@ function panelSound(p) {
         ${slider("s-level", "Level", o.level, 0, 127, pct)}${slider("s-vel_sens", "Velocity", o.vel_sens, 0, 127, pct)}
       </div>
     </div>
+    ${s3Html(st.set.s3, pct)}
     ${sx2Html(x, pct, time)}`;
   p.querySelectorAll("[data-snd]").forEach((b) => (b.onclick = () => {
     const sn = st.sounds[+b.dataset.snd];
-    st.set.sound = { ...sn.sound }; st.set.sx = structuredClone(sn.sx);
+    st.set.sound = { ...sn.sound }; st.set.sx = structuredClone(sn.sx); st.set.s3 = { ...sn.s3 };
     markDirty(); renderPanel(); audition(st.sel);
   }));
   bindSx2(p, x);
+  bindS3(p, st.set.s3);
   p.querySelectorAll("[data-wa]").forEach((b) => (b.onclick = () => { o.wave_a = +b.dataset.wa; markDirty(); renderPanel(); audition(st.sel); }));
   p.querySelectorAll("[data-wb]").forEach((b) => (b.onclick = () => { o.wave_b = +b.dataset.wb; markDirty(); renderPanel(); audition(st.sel); }));
   bindSliders(p, "s-", o, () => {});

@@ -4,6 +4,7 @@
 // AudioWorklet (worklet.js) or, where there is none, a ScriptProcessor. No DOM here.
 // Copyright (C) 2026 Jamie (TwistedGenetics).
 import { chordNotes, voiceLead, MAXN, NKEYS } from "./chord.js";
+import { WT, WT_N, WT_FRAMES } from "./wavetables.js";
 
 const FS = 44100;      // the FM-1's rate; the preview runs at the browser's and scales its time constants to it
 const ANTI_DENORMAL = 1e-20;
@@ -57,13 +58,38 @@ const clampf = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 // ---- fc_synth.c ----
 const VOICES = 10, CTRL = 16, CH_LEN = 1024, BLOCK = 128, DLY_LEN = 32768;
 const MD = { PITCH: 1, CUT: 2, RES: 3, BLEV: 4, FM: 5, PW: 6, AMP: 7, DETUNE: 8, SUB: 9, DRIVE: 10, FENV: 11,
-  L1RATE: 12, DLYMIX: 13, REVMIX: 14, CHORUS: 15, N: 16 };
+  L1RATE: 12, DLYMIX: 13, REVMIX: 14, CHORUS: 15, WTPOS: 16, SPREAD: 17, BPITCH: 18, N: 19 };
+const mdGlobal = (d) => d >= MD.L1RATE && d <= MD.CHORUS;
+const W = { SUPERSAW: 6, NOISE: 7, WT0: 8 }, OM = { ADD: 0, SYNC: 1, RING: 2 };
+const CH_RATE = [0.5, 0.83, 8], CH_DEPTH = [88, 88, 18];
+const SS_OFF = [-0.11002313, -0.06288439, -0.01952356, 0.01991221, 0.06216538, 0.10745242];
+const SS_P0 = [0.11, 0.53, 0.29, 0.71, 0.89, 0.43];
+function supersaw(ph, p, dt, d) {
+  let y = 0.6 * (2 * p - 1 - blep(p, dt)), sides = 0;
+  for (let k = 0; k < 6; k++) {
+    let q = ph[k] + dt * (1 + SS_OFF[k] * d);
+    q = q >= 1 ? q - 1 : q;
+    ph[k] = q;
+    sides += 2 * q - 1;
+  }
+  return (y + (0.15 + 0.25 * d) * sides) * 0.55;
+}
+function wavetable(t, pos, p) {
+  const f = pos * (WT_FRAMES - 1), x = p * WT_N;
+  let i = f | 0, j = x | 0;
+  if (i >= WT_FRAMES - 1) i = WT_FRAMES - 2;
+  const u = f - i, w = x - j;
+  j &= WT_N - 1;
+  const j1 = (j + 1) & (WT_N - 1), b0 = (t * WT_FRAMES + i) * WT_N, b1 = b0 + WT_N;
+  const a = WT[b0 + j] + (WT[b0 + j1] - WT[b0 + j]) * w, b = WT[b1 + j] + (WT[b1 + j1] - WT[b1 + j]) * w;
+  return (a + (b - a) * u) / 32767;
+}
 const MS = { LFO1: 1, LFO2: 2, MENV: 3, VEL: 4, KEY: 5, M1: 6, N: 10 };
 const DIV_BEATS = [0.125, 1 / 6, 0.25, 1 / 3, 0.375, 0.5, 2 / 3, 0.75, 1, 1.5, 2, 4, 8, 16, 32];
 function modScale(dst, amt) {
   const a = amt / 127;
   switch (dst) {
-    case MD.PITCH: return 24 * a * Math.abs(a);
+    case MD.PITCH: case MD.BPITCH: return 24 * a * Math.abs(a);
     case MD.CUT: case MD.FENV: return 6 * a;
     case MD.FM: return 0.5 * a;
     case MD.PW: return 0.45 * a;
@@ -77,11 +103,15 @@ export const defaultSx = () => ({ flt_mode: 0, flt_slope: 0, drive: 0, lfo_wave:
   mod: Array.from({ length: 6 }, () => ({ src: 0, dst: 0, amt: 0 })), macro: [64, 64, 64, 64], dly_time: 7, dly_fb: 50,
   dly_mix: 0, dly_tone: 80, dly_mode: 0 });
 
+export const defaultS3 = () => ({ wt_pos: 0, spread: 50, osc_mode: 0, b_semi: 0, crush_bits: 0, crush_rate: 0,
+  wobble: 0, chorus_mode: 0, phaser: 0 });
+
 export class Synth {
   constructor(rate = FS) {
     this.rate = rate;
     this.v = Array.from({ length: VOICES }, () => ({ note: 0, on: 0, sa: 0, sf: 0, sm: 0, age: 0, pa: 0, pb: 0, ps: 0,
-      ia: 0, ib: 0, vel: 1, velr: 0, ea: 0, ef: 0, em: 0, ic1: 0, ic2: 0, ic3: 0, ic4: 0, key: 0 }));
+      ia: 0, ib: 0, vel: 1, velr: 0, ea: 0, ef: 0, em: 0, ic1: 0, ic2: 0, ic3: 0, ic4: 0, key: 0,
+      ssa: new Float32Array(6), ssb: new Float32Array(6) }));
     this.age = 0;
     this.ch = new Float32Array(CH_LEN); this.chw = 0; this.chph = 0;
     const sc = rate / FS;
@@ -94,16 +124,29 @@ export class Synth {
     this.dl = [new Int16Array(DLY_LEN), new Int16Array(DLY_LEN)]; this.dlw = 0; this.dlLen = 1;
     this.dlLp = [0, 0]; this.dlHp = [0, 0];
     this.lfoPh = [0, 0]; this.lfoHz = [1, 1]; this.lfoSh = [0, 0]; this.lfoBlk = [new Float32Array(8), new Float32Array(8)];
-    this.rng = 0x9e3779b9; this.tempoBpm = 120;
+    this.rng = 0x9e3779b9; this.tempoBpm = 120; this.maxv = VOICES;
     this.sx = defaultSx();
+    this.wob = 1; this.wobPh = [0, 0]; this.crPh = 0; this.crHold = 0;
+    this.phPh = 0; this.phA = [0, 0]; this.phZ = [[0, 0, 0, 0], [0, 0, 0, 0]]; this.phY = [0, 0];
+    this.s3x(defaultS3());
+  }
+  s3x(t) {
+    this.s3 = t;
+    this.wtPos = t.wt_pos / 127; this.spread = t.spread / 127; this.omode = t.osc_mode % 3;
+    this.bRatio = exp2(t.b_semi / 12); this.wobDepth = t.wobble / 127;
+    this.crStep = t.crush_rate ? exp2(-t.crush_rate * (5 / 127)) : 1;
+    this.crQ = t.crush_bits ? exp2(15 - t.crush_bits * (13 / 127)) : 0;
+    this.phMix = t.phaser / 63;
+    this.chRate = CH_RATE[t.chorus_mode % 3]; this.chDepth = CH_DEPTH[t.chorus_mode % 3];
   }
   tsec(v) { return 0.001 * exp2(v * (13 / 127)); }
   env(a, d, s, r) {
     const R = this.rate;
     return { a: 1 / (this.tsec(a) * R), d: exp2(-9.966 / (this.tsec(d) * R)), s: s / 127, r: exp2(-9.966 / (this.tsec(r) * R)) };
   }
-  sound(o, x = defaultSx()) {
+  sound(o, x = defaultSx(), t = defaultS3()) {
     this.sx = x;
+    this.s3x(t);
     this.amp = this.env(o.amp_a, o.amp_d, o.amp_s, o.amp_r);
     this.flt = this.env(o.flt_a, o.flt_d, o.flt_s, o.flt_r);
     this.menv = this.env(x.menv_a, x.menv_d, x.menv_s, x.menv_r);
@@ -116,12 +159,12 @@ export class Synth {
     this.detuneC = o.detune * (50 / 127);
     this.bl = o.b_level / 127; this.sub = o.sub / 127; this.fm = o.fm * (0.5 / 127); this.vs = o.vel_sens / 127;
     this.drive = x.drive / 127;
-    this.wa = o.wave_a % 6; this.wb = o.wave_b % 6;
+    this.wa = o.wave_a % 12; this.wb = o.wave_b % 12;
     this.chmix = o.chorus / 127; this.rvmix = o.rev_mix / 127; this.fb = 0.7 + 0.28 * (o.rev_size / 127);
     this.mv = []; this.mg = []; this.useMenv = false;
     for (const m of x.mod) {
       if (!m.src || !m.dst || !m.amt || m.src >= MS.N || m.dst >= MD.N) continue;
-      if (m.dst >= MD.L1RATE) {
+      if (mdGlobal(m.dst)) {
         if (m.src === MS.MENV || m.src === MS.VEL || m.src === MS.KEY) continue;
         this.mg.push({ src: m.src, dst: m.dst, amt: modScale(m.dst, m.amt) });
       } else {
@@ -152,17 +195,20 @@ export class Synth {
     let v = this.v.find((x) => x.sa && x.note === note);
     if (!v) {
       let old = null, rel = null;
-      for (const x of this.v) {
+      for (const x of this.v.slice(0, this.maxv)) {
         if (!x.sa) { v = x; break; }
         if (x.sa === 3 && (!rel || x.age < rel.age)) rel = x;
         if (!old || x.age < old.age) old = x;
       }
       if (!v) { v = rel || old; v.ea = 0; v.ef = v.em = 0; v.ic1 = v.ic2 = v.ic3 = v.ic4 = 0; }
     }
-    if (!v.sa) { v.ea = v.ef = v.em = 0; v.ic1 = v.ic2 = v.ic3 = v.ic4 = 0; v.pa = 0; v.pb = 0.37; v.ps = 0; }
+    if (!v.sa) {
+      v.ea = v.ef = v.em = 0; v.ic1 = v.ic2 = v.ic3 = v.ic4 = 0; v.pa = 0; v.pb = 0.37; v.ps = 0;
+      for (let k = 0; k < 6; k++) { v.ssa[k] = SS_P0[k]; v.ssb[k] = SS_P0[5 - k]; }
+    }
     v.note = note; v.on = 1; v.sa = 1; v.sf = 1; v.sm = 1; v.age = ++this.age;
     const hz = 440 * exp2((note - 69) / 12);
-    v.ia = hz / this.rate; v.ib = v.ia * exp2(this.detuneC / 1200);
+    v.ia = hz / this.rate; v.ib = v.ia * this.bRatio * exp2(this.detuneC / 1200);
     v.velr = vel / 127;
     v.vel = 1 - this.vs + this.vs * v.velr;
     v.key = note - 60;
@@ -188,22 +234,34 @@ export class Synth {
       default: return src >= MS.M1 && src < MS.N ? this.macro[src - MS.M1] : 0;
     }
   }
+  noise() {
+    this.rng = (Math.imul(this.rng, 1664525) + 1013904223) >>> 0;
+    return (this.rng | 0) / 2147483648;
+  }
+  oscAny(w, p, dt, pw, ss, spread, pos) {
+    if (w === W.SUPERSAW) return supersaw(ss, p, dt, spread);
+    if (w === W.NOISE) return this.noise();
+    if (w >= W.WT0) return wavetable(w - W.WT0, pos, p);
+    return osc(w, p, dt, pw);
+  }
   static svfOut(mode, x, v1, v2, k) {
     switch (mode) { case 1: return v1; case 2: return x - k * v1 - v2; case 3: return x - k * v1; default: return v2; }
   }
   voice(v, mono, n) {
     const nyq = 0.45 * this.rate, mode = this.sx.flt_mode, slope = this.sx.flt_slope, R2 = 1.41421356;
-    const md = new Float32Array(MD.L1RATE);
+    const md = new Float32Array(MD.N);
     for (let i = 0; i < n; i += CTRL) {
       const m = Math.min(CTRL, n - i), blk = (i / CTRL) | 0;
       md.fill(0);
       for (const q of this.mv) md[q.dst] += q.amt * this.src(v, q.src, blk);
       let ia = v.ia, ib = v.ib, bl = this.bl, sub = this.sub, fm = this.fm, pw = 0, drv = this.drive;
-      if (this.mv.length) {
-        if (md[MD.PITCH] !== 0 || md[MD.DETUNE] !== 0) {
-          ia = v.ia * exp2(md[MD.PITCH] / 12);
-          ib = ia * exp2((this.detuneC + md[MD.DETUNE]) / 1200);
+      let pos = this.wtPos, spr = this.spread;
+      if (this.mv.length || this.wob !== 1) {
+        if (md[MD.PITCH] !== 0 || md[MD.DETUNE] !== 0 || md[MD.BPITCH] !== 0 || this.wob !== 1) {
+          ia = v.ia * exp2(md[MD.PITCH] / 12) * this.wob;
+          ib = ia * this.bRatio * exp2((this.detuneC + md[MD.DETUNE]) / 1200 + md[MD.BPITCH] / 12);
         }
+        pos = clampf(pos + md[MD.WTPOS], 0, 1); spr = clampf(spr + md[MD.SPREAD], 0, 1);
         bl = clampf(bl + md[MD.BLEV], 0, 1); sub = clampf(sub + md[MD.SUB], 0, 1);
         fm = clampf(fm + md[MD.FM], 0, 0.5); pw = md[MD.PW]; drv = clampf(drv + md[MD.DRIVE], 0, 1);
       }
@@ -214,13 +272,19 @@ export class Synth {
       const a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2;
       const b1 = 1 / (1 + g * (g + R2)), b2 = g * b1, b3 = g * b2;
       const dg = 0.5 + 3.5 * drv, dc = 2 / (1 + drv);
+      const ga = this.omode === OM.ADD ? 1 : 1 - bl, gb = this.omode === OM.RING ? 1.4 * bl : bl;
       for (let j = 0; j < m; j++) {
         let pa = v.pa;
         if (fm > 0) pa = wrap1(pa + fm * sinTurn(v.pb));
-        let x = osc(this.wa, pa, ia, pw);
-        if (bl > 0) x += bl * osc(this.wb, v.pb, ib, pw);
+        let x = this.oscAny(this.wa, pa, ia, pw, v.ssa, spr, pos);
+        if (bl > 0) {
+          const y2 = this.oscAny(this.wb, v.pb, ib, pw, v.ssb, spr, pos);
+          x = ga * x + gb * (this.omode === OM.RING ? x * y2 : y2);
+        }
         if (sub > 0) x += sub * osc(1, v.ps, ia * 0.5, 0);
-        v.pa = wrap1(v.pa + ia); v.pb = wrap1(v.pb + ib); v.ps = wrap1(v.ps + ia * 0.5);
+        v.pa += ia;
+        if (v.pa >= 1) { v.pa -= 1; if (this.omode === OM.SYNC) v.pb = v.pa * (ib / ia); }
+        v.pb = wrap1(v.pb + ib); v.ps = wrap1(v.ps + ia * 0.5);
         if (drv > 0) { const u = x * dg; x = dc * u / (1 + Math.abs(u)); }
         const v3 = x - v.ic2, v1 = a1 * v.ic1 + a2 * v3, v2 = v.ic2 + a2 * v.ic1 + a3 * v3;
         v.ic1 = 2 * v1 - v.ic1; v.ic2 = 2 * v2 - v.ic2;
@@ -268,26 +332,65 @@ export class Synth {
           }
         }
       }
+      if (this.wobDepth > 0) {
+        this.wobPh[0] += 0.55 * k / this.rate; this.wobPh[1] += 6.3 * k / this.rate;
+        for (let c = 0; c < 2; c++) if (this.wobPh[c] >= 1) this.wobPh[c] -= 1;
+        this.wob = exp2(this.wobDepth * (0.25 * sinTurn(this.wobPh[0]) + 0.04 * sinTurn(this.wobPh[1])) / 12);
+      } else this.wob = 1;
       const chmix = clampf(this.chmix + g[MD.CHORUS], 0, 1), rvmix = clampf(this.rvmix + g[MD.REVMIX], 0, 1);
       const dlmix = clampf(this.dlMix + g[MD.DLYMIX], 0, 1);
       mono.fill(0, 0, k);
       for (const v of this.v) if (v.sa) this.voice(v, mono, k);
+      if (this.crQ > 0 || this.crStep < 1) {
+        const step = this.crStep * FS / this.rate;     // the same rate in Hz whatever the browser's
+        for (let i = 0; i < k; i++) {
+          let x = mono[i];
+          if (this.crStep < 1) {
+            this.crPh += step;
+            if (this.crPh >= 1) { this.crPh -= 1; this.crHold = x; }
+            x = this.crHold;
+          }
+          if (this.crQ > 0) { const y = x * this.crQ; x = Math.trunc(y + (y < 0 ? -0.5 : 0.5)) / this.crQ; }
+          mono[i] = x;
+        }
+      }
+      if (this.phMix > 0) {
+        this.phPh += 0.3 * k / this.rate;
+        if (this.phPh >= 1) this.phPh -= 1;
+        for (let c = 0; c < 2; c++) {
+          let p = this.phPh + 0.25 * c;
+          p = p >= 1 ? p - 1 : p;
+          const tri = p < 0.5 ? 2 * p : 2 - 2 * p, tn = tanS(Math.PI * 300 * exp2(3.32 * tri) / this.rate);
+          this.phA[c] = (tn - 1) / (tn + 1);
+        }
+      }
       for (let i = 0; i < k; i++) {
         const x = mono[i];
         let l = x, r = x;
         this.ch[this.chw & (CH_LEN - 1)] = x;
         if (chmix > 0) {
           const tri = this.chph < 0.5 ? 4 * this.chph - 1 : 3 - 4 * this.chph;
-          const d1 = (154 + 88 * tri) * sc, d2 = (154 - 88 * tri) * sc;
+          const d1 = (154 + this.chDepth * tri) * sc, d2 = (154 - this.chDepth * tri) * sc;
           const i1 = d1 | 0, i2 = d2 | 0, t1 = d1 - i1, t2 = d2 - i2;
           const w1 = this.ch[(this.chw - i1) & (CH_LEN - 1)] * (1 - t1) + this.ch[(this.chw - i1 - 1) & (CH_LEN - 1)] * t1;
           const w2 = this.ch[(this.chw - i2) & (CH_LEN - 1)] * (1 - t2) + this.ch[(this.chw - i2 - 1) & (CH_LEN - 1)] * t2;
           l = x * (1 - 0.4 * chmix) + w1 * chmix;
           r = x * (1 - 0.4 * chmix) + w2 * chmix;
-          this.chph += 0.5 / this.rate;
+          this.chph += this.chRate / this.rate;
           if (this.chph >= 1) this.chph -= 1;
         }
         this.chw++;
+        if (this.phMix > 0) {
+          const io = [l, r];
+          for (let c = 0; c < 2; c++) {
+            let y = io[c] + 0.4 * this.phY[c];
+            const z = this.phZ[c], a = this.phA[c];
+            for (let q = 0; q < 4; q++) { const o2 = a * y + z[q]; z[q] = y - a * o2 + ANTI_DENORMAL; y = o2; }
+            this.phY[c] = y;
+            io[c] += this.phMix * y;
+          }
+          l = io[0] * (1 - 0.3 * this.phMix); r = io[1] * (1 - 0.3 * this.phMix);
+        }
         if (dlmix > 0) {
           const rd = (this.dlw - this.dlLen) & (DLY_LEN - 1), w = this.dlw & (DLY_LEN - 1);
           const dlv = this.dl[0][rd] / 32767, drv = this.dl[1][rd] / 32767;
@@ -471,11 +574,12 @@ export class Engine {
   message(m) {
     switch (m.type) {
       case "set": {
-        const was = this.set, sx = m.set.sx || defaultSx();
+        const was = this.set, sx = m.set.sx || defaultSx(), s3 = m.set.s3 || defaultS3();
         const changedSound = !was || JSON.stringify(was.sound) !== JSON.stringify(m.set.sound) ||
-          JSON.stringify(was.sx || null) !== JSON.stringify(m.set.sx || null);
+          JSON.stringify(was.sx || null) !== JSON.stringify(m.set.sx || null) ||
+          JSON.stringify(was.s3 || null) !== JSON.stringify(m.set.s3 || null);
         this.set = m.set;
-        if (changedSound) this.synth.sound(m.set.sound, sx);
+        if (changedSound) this.synth.sound(m.set.sound, sx, s3);
         if (!was || was.tempo !== m.set.tempo) this.synth.tempo(m.set.tempo);
         break;
       }

@@ -3,7 +3,7 @@
 // synth_dump's levels: every factory sound and one with all of part 2 on, 50 ms at a time, within 2 %.
 // Copyright (C) 2026 Jamie (TwistedGenetics).
 import { readFileSync } from "node:fs";
-import { Synth, defaultSx } from "../../web/editor/engine.js";
+import { Synth, defaultSx, defaultS3 } from "../../web/editor/engine.js";
 import { loadPresets } from "../../web/editor/setcodec.js";
 
 const c = readFileSync(0, "utf8").trim().split("\n").map((l) => {
@@ -12,9 +12,9 @@ const c = readFileSync(0, "utf8").trim().split("\n").map((l) => {
 });
 const { sounds } = loadPresets(JSON.parse(readFileSync(new URL("../../web/editor/presets.json", import.meta.url))));
 
-function play(o, x, bpm) {
+function play(o, x, t, bpm) {
   const s = new Synth(44100), n = 44100 * 5 / 2, L = new Float32Array(n), R = new Float32Array(n);
-  s.sound(o, x); s.tempo(bpm);
+  s.sound(o, x, t); s.tempo(bpm);
   [45, 52, 55, 59, 60].forEach((nt, i) => s.on(nt, 100 - 10 * i));
   for (let i = 0; i < n; i += 128) {
     if (i === Math.floor(44100 * 3 / 2 / 128) * 128) for (const nt of [45, 52, 55, 59, 60]) s.off(nt);
@@ -34,9 +34,17 @@ Object.assign(x, { flt_mode: 1, flt_slope: 1, drive: 70, lfo_wave: [1, 4], lfo_r
   dly_mode: 1 });
 x.mod = [[1, 2, 40], [3, 1, 30], [2, 6, 90], [4, 7, -50], [7, 13, 60], [2, 12, 50]].map(([src, dst, amt]) => ({ src, dst, amt }));
 const everything = { ...sounds[3].sound, wave_a: 5, wave_b: 1 };
+const x2 = structuredClone(x);
+x2.mod[5] = { src: 1, dst: 16, amt: 60 }; x2.mod[4] = { src: 3, dst: 18, amt: 50 };
+const t2 = { ...defaultS3(), wt_pos: 40, spread: 90, osc_mode: 1, b_semi: 7, crush_bits: 70, crush_rate: 40, wobble: 60,
+  chorus_mode: 1, phaser: 40 };
+const t3 = { ...t2, osc_mode: 2, chorus_mode: 2, phaser: 63 };
+const extra = [() => play(everything, x, defaultS3(), 170),
+  () => play({ ...everything, wave_a: 6, wave_b: 10 }, x2, t2, 170),
+  () => play({ ...everything, wave_a: 8, wave_b: 7 }, x2, t3, 120)];
 let bad = 0, worst = 0;
 c.forEach((row, i) => {
-  const js = i < sounds.length ? play(sounds[i].sound, sounds[i].sx, 140) : play(everything, x, 170);
+  const js = i < sounds.length ? play(sounds[i].sound, sounds[i].sx, sounds[i].s3, 140) : extra[i - sounds.length]();
   row.lv.forEach((v, j) => {
     const d = Math.abs(v - js[j]) / Math.max(v, 1e-3);
     if (v > 1e-3) worst = Math.max(worst, d);

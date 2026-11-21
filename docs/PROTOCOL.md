@@ -13,8 +13,8 @@ Set numbers: `0`–`19` user sets (in flash), `127` the **working** set (what th
 |---|---|---|---|
 | 1 | INFO (Felucca's) | — | name (ASCII, 0-ended), six 0s |
 | 25 | PING (Felucca's) | — | 0 |
-| 40 | FC_INFO | — | name (ASCII, 0-ended), protocol (3), factory sets, user slots (20), current set (2 bytes), working set changed (0/1) |
-| 41 | SET_GET | set (2 bytes) | set (2 bytes), ok (1/0), then if ok: the 376-byte set packed (430 bytes) |
+| 40 | FC_INFO | — | name (ASCII, 0-ended), protocol (4), factory sets, user slots (20), current set (2 bytes), working set changed (0/1) |
+| 41 | SET_GET | set (2 bytes) | set (2 bytes), ok (1/0), then if ok: the 384-byte set packed (439 bytes) |
 | 42 | SET_PUT | set (2 bytes), the set packed | set (2 bytes), rc: 0 ok, 1 wrong size, 2 not a set, 3 flash write failed, 4 no such slot. A user slot is saved to flash; if it is the current set, or the working set, the keys play it at once |
 | 43 | NAMES | — | 20, then per user slot: used (1/0), 16 name bytes |
 | 44 | SELECT | set (2 bytes) | set (2 bytes), rc (0 ok, 1 nothing there). Remembered across restarts |
@@ -23,7 +23,8 @@ Set numbers: `0`–`19` user sets (in flash), `127` the **working** set (what th
 | 47 | GLOBALS_PUT | the 16-byte settings packed | rc |
 | 48 | EVT (0.4, **sent by the FM-1**) | — never asked for | what changed (bits: 1 loaded a set, 2 edited, 4 saved), current set (2 bytes), working set changed (0/1) |
 
-**Protocol 3 (0.6):** sets are 376 bytes (docs/FORMAT.md). SET_PUT still takes a 336-byte version 1 set from an
+**Protocol 4 (0.7):** sets are 384 bytes; SET_PUT takes 336-, 376- and 384-byte sets, and the editor sends older
+firmware the size it knows. **Protocol 3 (0.6):** sets are 376 bytes (docs/FORMAT.md). SET_PUT still takes a 336-byte version 1 set from an
 older editor (its sound gets part 2's defaults); the editor sends older firmware (protocol 2) the first 336 bytes.
 
 **Live sync (0.4).** The FM-1 sends EVT (at most every 120 ms) when its own panel loads, edits or saves a set; the

@@ -17,6 +17,12 @@ const float FC_DIV_BEATS[FC_NDIV] = {0.125f, 1.f / 6.f, 0.25f, 1.f / 3.f, 0.375f
 const char *const FC_DIV_NAME[FC_NDIV] = {"1/32", "1/16T", "1/16", "1/8T", "1/16D", "1/8", "1/4T", "1/8D", "1/4",
                                           "1/4D", "1/2", "1 BAR", "2 BARS", "4 BARS", "8 BARS"};
 
+void fc_sound3_default(fc_sound3_t *x)
+{
+    zero(x, sizeof *x);
+    x->spread = 50;
+}
+
 void fc_sound2_default(fc_sound2_t *x)
 {
     zero(x, sizeof *x);
@@ -76,6 +82,7 @@ void fc_set_init(fc_set_t *s, const char *name)
     s->tempo = 120;
     fc_sound_default(&s->sound);
     fc_sound2_default(&s->sx);
+    fc_sound3_default(&s->s3);
     s->play.mode = FC_M_CHORD;
     s->play.strum = 15;
     s->play.arp_rate = FC_R_16;
@@ -137,7 +144,23 @@ int fc_set_check(fc_set_t *s)
     }
     if (s->version == 1u) {                   /* 0.1 .. 0.5: the sound had no part 2 */
         fc_sound2_default(&s->sx);
+        s->version = 2;
+    }
+    if (s->version == 2u) {                   /* 0.6: nor part 3 */
+        fc_sound3_default(&s->s3);
         s->version = FC_SET_VERSION;
+    }
+    {
+        fc_sound3_t *t = &s->s3;
+        t->wt_pos = lim(t->wt_pos, 0, 127);
+        t->spread = lim(t->spread, 0, 127);
+        t->osc_mode = lim(t->osc_mode, 0, FC_NOMODE - 1u);
+        t->b_semi = lims(t->b_semi, -24, 24);
+        t->crush_bits = lim(t->crush_bits, 0, 127);
+        t->crush_rate = lim(t->crush_rate, 0, 127);
+        t->wobble = lim(t->wobble, 0, 127);
+        if ((t->fx >> 6) >= FC_NCMODE)
+            t->fx &= 0x3Fu;
     }
     {
         fc_sound2_t *x = &s->sx;
@@ -192,6 +215,8 @@ int fc_globals_check(fc_globals_t *g)
     g->clock = lim(g->clock, 0, 1);
     g->velocity = lim(g->velocity, 1, 127);
     g->midi_in_ch = lim(g->midi_in_ch, 0, 16);
+    if (g->voices)
+        g->voices = lim(g->voices, 4, 10);
     return 0;
 }
 

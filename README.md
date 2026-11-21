@@ -24,10 +24,13 @@ spread), slash bass and octave; LEARN captures a chord from notes you play; stru
 MIDI clock), latch, auto voice leading, velocity humanise, transpose. The screen is light with big type: the chord's
 name, its inversion and voicing, the octave.
 
-**The synth:** ten voices, two oscillators (saw, square, triangle, sine, organ, pulse) with detune, a sub and FM,
+**The synth:** ten voices, two oscillators (saw, square, triangle, sine, organ, pulse, supersaw, noise, four
+wavetables) with detune, tuning, hard sync or ring mod, a sub and FM,
 drive into a low-pass / band-pass / high-pass / notch filter (12 or 24 dB) with its own envelope, an amp envelope;
 two LFOs (free or tempo-synced), a mod envelope and a six-slot mod matrix with four macro knobs; a Juno-style stereo
-chorus, a tempo-synced stereo / ping-pong delay and a reverb. 27 sounds to start from, among them warm pad, dark
+chorus (three modes), a phaser, a sampler-era crusher and tape wobble, a tempo-synced stereo / ping-pong delay and a
+reverb. 42 sounds to start from, among them supersaw chords, choir aah, PPG digital, sync chords, kalimba, SP1200
+stab, Amiga chords, warm pad, dark
 pad, liquid keys, neuro stab, rave stab, Reese chord, hoover stab, atmos pad, liquid strings, ragga horn, Juno
 strings, house organ, Detroit stab, dub techno, FM piano, wobble chord and tape chords.
 

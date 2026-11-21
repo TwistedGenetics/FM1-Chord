@@ -17,7 +17,7 @@ export function mockFM1(factorySets, { name = "FM1-Chord FM-1", version = "0.1 D
     if (d[0] !== 0xf0 || d[1] !== 0x7d || d[2] !== 0x46 || d[3] !== 0x4c) return;
     const cmd = d[4], a = Array.from(d.slice(5, d.length - 1));
     switch (cmd) {
-      case 40: reply(cmd, [...str(`FM1-Chord ${version}`, 24).filter((x) => x), 0, 3, factorySets.length, 20, cur >> 7, cur & 127, 0]); break;
+      case 40: reply(cmd, [...str(`FM1-Chord ${version}`, 24).filter((x) => x), 0, 4, factorySets.length, 20, cur >> 7, cur & 127, 0]); break;
       case 41: {
         const s = at(a), h = [a[0], a[1]];
         const b = s === 127 ? working : s >= 128 ? (factorySets[s - 128] ? encodeSet(factorySets[s - 128]) : null) : user[s];
@@ -26,7 +26,7 @@ export function mockFM1(factorySets, { name = "FM1-Chord FM-1", version = "0.1 D
       }
       case 42: {
         const s = at(a), h = [a[0], a[1]], b = unpack7(a.slice(2), SET_BYTES);
-        if (b.length !== SET_BYTES && b.length !== 336) { reply(cmd, [...h, 1]); break; }
+        if (b.length !== SET_BYTES && b.length !== 336 && b.length !== 376) { reply(cmd, [...h, 1]); break; }
         const d = decodeSet(b);
         if (!d) { reply(cmd, [...h, 2]); break; }
         const nb = encodeSet(d);                       // kept as the FM-1 keeps it: 376 bytes

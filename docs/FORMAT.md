@@ -1,4 +1,4 @@
-# A chord set: 376 bytes
+# A chord set: 384 bytes
 
 The same bytes in the FM-1's flash, over SysEx and in the editor (`src/core/fc_set.h`, `web/editor/setcodec.js`).
 Every field is one byte, so there is no padding or byte order to worry about. `.chordset` files are JSON holding the
@@ -7,7 +7,7 @@ set as the editor sees it plus these bytes as hex.
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 2 | `F` `C` |
-| 2 | 1 | version (2; 1 for sets from 0.1–0.5, which are the first 336 bytes) |
+| 2 | 1 | version (3; 2 for sets from 0.6, the first 376 bytes; 1 for 0.1–0.5, the first 336) |
 | 3 | 1 | keys (27) |
 | 4 | 16 | name, ASCII, 0-padded |
 | 20 | 1 | key root 0–11 (for the editor's suggestions) |
@@ -19,6 +19,7 @@ set as the editor sees it plus these bytes as hex.
 | 64 | 270 | 27 chords, 10 bytes each (below) |
 | 334 | 2 | reserved |
 | 336 | 40 | sound part 2 (from 0.6, below) |
+| 376 | 8 | sound part 3 (from 0.7, below) |
 
 Sound part 2 (`fc_sound2_t`): filter mode (0 low-pass, 1 band-pass, 2 high-pass, 3 notch); slope (0 12 dB, 1 24 dB);
 drive 0–127; LFO 1 and 2 waves (0 sine, 1 triangle, 2 saw, 3 square, 4 random / S&H); their rates 0–127 (free:
@@ -31,8 +32,15 @@ semitones); four macro values 0–127; delay time (0 1/32, 1 1/16T, 2 1/16, 3 1/
 8 1/4, 9 1/4D, 10 1/2, 11 1 bar; on the tempo, halved until it fits 0.74 s), feedback, mix, tone (0–127), mode (0
 stereo, 1 ping-pong). A version 1 set gets: low-pass 12 dB, no drive, nothing in the matrix, macros at 64, delay mix 0.
 
-On the FM-1 the user sets live ten to a store object (3760 bytes); objects written by 0.1–0.5 (ten 336-byte sets)
-are read and spread out to the new size.
+Sound part 3 (`fc_sound3_t`): WT position 0–127; supersaw spread 0–127; osc mode (0 B added, 1 B hard-synced to A,
+2 A ring-modulated by B; in 1 and 2 B level fades from plain A to the effect); B tune (signed, −24..24 semitones);
+crusher bits (0 off, else 16 down to 3 bits); crusher rate (0 off, else 44.1 kHz down to about 1.4 kHz, halving every
+25 steps); tape wobble 0–127; fx: chorus mode in bits 7–6 (0 I, 1 II, 2 I+II), phaser 0–63 in bits 5–0. Older
+sets get: spread 50, everything else 0. Waves (the sound's wave A / B bytes) from 0.7: 6 supersaw, 7 noise, 8–11 the
+wavetables vox, PWM, digital, glass; matrix destinations 16 WT position, 17 supersaw spread, 18 osc B pitch.
+
+On the FM-1 the user sets live ten to a store object (3840 bytes, the most an object holds); objects written by
+0.1–0.5 (ten 336-byte sets) or 0.6 (376) are read and spread out to the new size.
 
 A chord: root 0–11; quality (below, `255` empty key, `31` custom: exact notes); custom notes (3 bytes: bits 0–23 of
 a mask of semitones above the root); inversion 0–3; voicing 0 close, 1 open, 2 drop 2, 3 drop 3, 4 spread; slash bass

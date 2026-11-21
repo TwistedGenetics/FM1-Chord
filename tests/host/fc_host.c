@@ -283,18 +283,18 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "shot")) {
             snprintf(path, sizeof path, "%s/%s", out, b);
             shot(path);
-        } else if (!strcmp(a, "oldstore")) {     /* the user sets as 0.1 .. 0.5 saved them: 336 bytes, version 1 */
+        } else if (!strcmp(a, "oldstore")) {     /* the user sets as older versions saved them: oldstore 336 | 376 */
             static uint8_t t[PLAT_STORE_MAX];
-            uint32_t o, i;
+            uint32_t o, i, sz = (uint32_t)atoi(b), ver = sz == FC_SET_BYTES_V1 ? 1u : 2u;
             for (o = OBJ_PAT0; o <= OBJ_PAT1; o++)
                 if (store_len[o] == (int)(10u * FC_SET_BYTES)) {
                     for (i = 0; i < 10u; i++) {
-                        memcpy(t + i * FC_SET_BYTES_V1, store[o] + i * FC_SET_BYTES, FC_SET_BYTES_V1);
-                        if (t[i * FC_SET_BYTES_V1] == 'F')
-                            t[i * FC_SET_BYTES_V1 + 2u] = 1;
+                        memcpy(t + i * sz, store[o] + i * FC_SET_BYTES, sz);
+                        if (t[i * sz] == 'F')
+                            t[i * sz + 2u] = (uint8_t)ver;
                     }
-                    memcpy(store[o], t, 10u * FC_SET_BYTES_V1);
-                    store_len[o] = (int)(10u * FC_SET_BYTES_V1);
+                    memcpy(store[o], t, 10u * sz);
+                    store_len[o] = (int)(10u * sz);
                 }
         } else if (!strcmp(a, "reboot")) {
             fc_app_init();
@@ -316,6 +316,8 @@ int main(int argc, char **argv)
                 got = fc_set.sx.flt_mode;
             else if (!strcmp(b, "macro1"))
                 got = fc_set.sx.macro[0];
+            else if (!strcmp(b, "spread"))
+                got = fc_set.s3.spread;
             else if (!strcmp(b, "dlymix"))
                 got = fc_set.sx.dly_mix;
             else if (!strcmp(b, "tempo"))

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7
+
+- **Stage two of the synth.** New waves for either oscillator: **supersaw** (seven saws, spread adjustable),
+  **noise**, and four **wavetables** (vox, PWM, digital, glass) swept by a WT position. Osc B can be **tuned** in
+  semitones, **hard-synced** to A or **ring-modulate** it. New matrix destinations: WT position, supersaw spread,
+  osc B pitch.
+- **Lo-fi:** a sampler-era **crusher** (bits and sample rate; SP-1200, MPC60, S950 and Amiga settings in the
+  editor) and **tape wobble**; a **phaser**; the chorus has three modes (I, II, I+II).
+- **15 new sounds** (42 in all): supersaw chords, shimmer pad, choir aah, vox stab, PPG digital, PWM WT pad, sync
+  chords, ring bells, kalimba, marimba, lo-fi tape pad, vinyl noise pad, SP1200 stab, Amiga chords, Juno I+II pad.
+- FM-1 pages: OSC and OSC 2 (ENV), LO-FI (FX), GLOBAL 2 with **VOICES** (4–10): if a heavy sound is too much for the
+  FM-1's CPU, fewer voices.
+- Sets are 384 bytes (version 3); 0.1–0.6 sets load as they were. Editor protocol 4.
+
 ## 0.6
 
 - **A bigger synth.** The filter is now low-pass, band-pass, high-pass or notch, at 12 or 24 dB, with drive into it.

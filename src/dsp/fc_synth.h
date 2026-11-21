@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * FM1-Chord: the built-in polyphonic synth, made for chords: two oscillators (saw, square, triangle, sine, organ,
- * pulse) with a sub and phase modulation, drive into a state-variable filter (low-pass, band-pass, high-pass or
+ * pulse, supersaw, noise, four wavetables) with a sub, phase modulation, hard sync or ring modulation, drive into a
+ * state-variable filter (low-pass, band-pass, high-pass or
  * notch, 12 or 24 dB) with its own envelope, an amp envelope; two LFOs, a mod envelope and a six-slot mod matrix
- * (macro knobs among its sources); then a Juno-style stereo chorus, a tempo-synced delay and a reverb.
+ * (macro knobs among its sources); a sampler-era crusher and tape wobble; then a Juno-style stereo chorus (three
+ * modes), a phaser, a tempo-synced delay and a reverb.
  * Single-precision float. web/editor/engine.js is the same synth in JavaScript for the editor's preview.
  * Copyright (C) 2026 Jamie (TwistedGenetics). */
 #pragma once
@@ -23,6 +25,7 @@ typedef struct {
     float pa, pb, ps, inc_a, inc_b;
     float vel, velr, ea, ef, em;
     float ic1, ic2, ic3, ic4;       /* the filter's state (3, 4: the second stage, 24 dB) */
+    float ssa[6], ssb[6];           /* the supersaw's six other saws, A and B */
     float key;                      /* note - 60, for key tracking */
 } fc_voice_t;
 
@@ -34,10 +37,17 @@ typedef struct {
     fc_voice_t v[FC_VOICES];
     fc_sound_t snd;
     fc_sound2_t sx;
+    fc_sound3_t s3;
     fc_env_c amp, flt, menv;
+    float wt_pos, spread, b_ratio, wob, wob_depth, wob_ph[2];
+    uint32_t omode;
+    /* crusher */
+    float cr_step, cr_ph, cr_hold, cr_q;
+    /* phaser */
+    float ph_mix, ph_ph, ph_a[2], ph_z[2][4], ph_y[2];
     float level, cut_st, fenv_st, track, res, detune_c, bl, sub, fm, vs, drive;
     uint32_t wa, wb;
-    uint32_t age;
+    uint32_t age, maxv;              /* voices it may use (fc_synth_voices) */
     /* modulation: the matrix's slots in use, split into those for each voice and those for the whole synth */
     uint8_t mv_src[FC_NMOD], mv_dst[FC_NMOD], mg_src[FC_NMOD], mg_dst[FC_NMOD];
     float mv_amt[FC_NMOD], mg_amt[FC_NMOD];
@@ -49,7 +59,7 @@ typedef struct {
     /* chorus */
     float ch_buf[FC_CH_LEN];
     uint32_t ch_w;
-    float ch_ph, ch_mix;
+    float ch_ph, ch_mix, ch_rate, ch_depth;
     /* delay */
     int16_t *dl[2];
     uint32_t dl_w, dl_len;
@@ -65,8 +75,9 @@ typedef struct {
 #define FC_RV_FLOATS 12800u
 void fc_synth_init(fc_synth_t *s, float *rv_mem, int16_t *dly_mem /* 2 x FC_DLY_LEN */);
 /* new values (any time, between blocks) */
-void fc_synth_sound(fc_synth_t *s, const fc_sound_t *snd, const fc_sound2_t *sx);
+void fc_synth_sound(fc_synth_t *s, const fc_sound_t *snd, const fc_sound2_t *sx, const fc_sound3_t *s3);
 void fc_synth_tempo(fc_synth_t *s, float bpm);              /* for the synced LFOs and the delay */
+void fc_synth_voices(fc_synth_t *s, uint32_t n);            /* polyphony 1..FC_VOICES (less work for the CPU) */
 void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel);
 void fc_synth_off(fc_synth_t *s, uint32_t note);
 void fc_synth_all_off(fc_synth_t *s);

@@ -5,6 +5,7 @@
  * Copyright (C) 2026 Jamie (TwistedGenetics). */
 #include "fc_synth.h"
 #include "fc_math.h"
+#include "fc_wavetables.h"
 
 #define FSF 44100.f
 /* a tiny constant kept in the feedback paths: decaying tails never reach denormals (slow on PCs, and unknown on
@@ -26,7 +27,8 @@ static float mod_scale(uint32_t dst, int32_t amt)
 {
     float a = (float)amt * (1.f / 127.f);
     switch (dst) {
-    case FC_MD_PITCH: return 24.f * a * (a < 0.f ? -a : a);   /* semitones */
+    case FC_MD_PITCH:
+    case FC_MD_BPITCH: return 24.f * a * (a < 0.f ? -a : a);  /* semitones */
     case FC_MD_CUT:
     case FC_MD_FENV: return 6.f * a;                          /* octaves */
     case FC_MD_FM: return 0.5f * a;
@@ -57,12 +59,26 @@ static void lfo_rates(fc_synth_t *s)
     }
 }
 
-void fc_synth_sound(fc_synth_t *s, const fc_sound_t *o, const fc_sound2_t *x)
+/* Juno-ish chorus modes: I, II (faster), I+II (fast and shallow) */
+static const float CH_RATE[FC_NCMODE] = {0.5f, 0.83f, 8.f}, CH_DEPTH[FC_NCMODE] = {88.f, 88.f, 18.f};
+
+void fc_synth_sound(fc_synth_t *s, const fc_sound_t *o, const fc_sound2_t *x, const fc_sound3_t *t)
 {
     float lv;
     uint32_t i;
     s->snd = *o;
     s->sx = *x;
+    s->s3 = *t;
+    s->wt_pos = (float)t->wt_pos * (1.f / 127.f);
+    s->spread = (float)t->spread * (1.f / 127.f);
+    s->omode = t->osc_mode % FC_NOMODE;
+    s->b_ratio = fc_exp2f((float)t->b_semi * (1.f / 12.f));
+    s->wob_depth = (float)t->wobble * (1.f / 127.f);
+    s->cr_step = t->crush_rate ? fc_exp2f(-(float)t->crush_rate * (5.f / 127.f)) : 1.f;
+    s->cr_q = t->crush_bits ? fc_exp2f(15.f - (float)t->crush_bits * (13.f / 127.f)) : 0.f;   /* 2^(bits-1) */
+    s->ph_mix = (float)(t->fx & 0x3Fu) * (1.f / 63.f);
+    s->ch_rate = CH_RATE[(t->fx >> 6) % FC_NCMODE];
+    s->ch_depth = CH_DEPTH[(t->fx >> 6) % FC_NCMODE];
     env_coefs(&s->amp, o->amp_a, o->amp_d, o->amp_s, o->amp_r);
     env_coefs(&s->flt, o->flt_a, o->flt_d, o->flt_s, o->flt_r);
     env_coefs(&s->menv, x->menv_a, x->menv_d, x->menv_s, x->menv_r);
@@ -88,7 +104,7 @@ void fc_synth_sound(fc_synth_t *s, const fc_sound_t *o, const fc_sound2_t *x)
         const fc_mod_t *m = &x->mod[i];
         if (!m->src || !m->dst || !m->amt || m->src >= FC_NMS || m->dst >= FC_NMD)
             continue;
-        if (m->dst >= FC_MD_L1RATE) {               /* the whole synth: only the LFOs and macros move it */
+        if (FC_MD_GLOBAL(m->dst)) {                 /* the whole synth: only the LFOs and macros move it */
             if (m->src == FC_MS_MENV || m->src == FC_MS_VEL || m->src == FC_MS_KEY)
                 continue;
             s->mg_src[s->nmg] = m->src;
@@ -110,6 +126,11 @@ void fc_synth_sound(fc_synth_t *s, const fc_sound_t *o, const fc_sound2_t *x)
     lfo_rates(s);
 }
 
+void fc_synth_voices(fc_synth_t *s, uint32_t n)
+{
+    s->maxv = n < 1u ? 1u : n > FC_VOICES ? FC_VOICES : n;
+}
+
 void fc_synth_tempo(fc_synth_t *s, float bpm)
 {
     s->tempo = fc_clampf(bpm, 20.f, 300.f);
@@ -124,6 +145,7 @@ void fc_synth_init(fc_synth_t *s, float *mem, int16_t *dly)
     uint32_t i, c, k, used = 0;
     fc_sound_t d;
     fc_sound2_t dx;
+    fc_sound3_t d3;
     for (i = 0; i < sizeof *s; i++)
         b[i] = 0;
     for (c = 0; c < 2u; c++) {
@@ -149,7 +171,10 @@ void fc_synth_init(fc_synth_t *s, float *mem, int16_t *dly)
     s->tempo = 120.f;
     fc_sound_default(&d);
     fc_sound2_default(&dx);
-    fc_synth_sound(s, &d, &dx);
+    fc_sound3_default(&d3);
+    s->wob = 1.f;
+    s->maxv = FC_VOICES;
+    fc_synth_sound(s, &d, &dx, &d3);
 }
 
 static float note_hz(uint32_t n) { return 440.f * fc_exp2f(((float)n - 69.f) * (1.f / 12.f)); }
@@ -167,7 +192,7 @@ void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel)
         }
     }
     if (!v)
-        for (i = 0; i < FC_VOICES; i++) {
+        for (i = 0; i < s->maxv; i++) {
             fc_voice_t *x = &s->v[i];
             if (!x->stage_a) {
                 v = x;
@@ -190,6 +215,14 @@ void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel)
         v->pa = 0.f;
         v->pb = 0.37f;                              /* B starts elsewhere: the detuned pair beats from the start */
         v->ps = 0.f;
+        {
+            static const float P0[6] = {0.11f, 0.53f, 0.29f, 0.71f, 0.89f, 0.43f};
+            uint32_t k;
+            for (k = 0; k < 6u; k++) {
+                v->ssa[k] = P0[k];
+                v->ssb[k] = P0[5u - k];
+            }
+        }
     }
     v->note = (uint8_t)note;
     v->on = 1;
@@ -199,7 +232,7 @@ void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel)
     v->age = ++s->age;
     hz = note_hz(note);
     v->inc_a = hz * (1.f / FSF);
-    v->inc_b = v->inc_a * fc_exp2f(s->detune_c * (1.f / 1200.f));
+    v->inc_b = v->inc_a * s->b_ratio * fc_exp2f(s->detune_c * (1.f / 1200.f));
     v->velr = (float)vel * (1.f / 127.f);
     v->vel = 1.f - s->vs + s->vs * v->velr;
     v->key = (float)note - 60.f;
@@ -306,6 +339,55 @@ static inline float env_step(uint8_t *st, float e, const fc_env_c *c)
     }
 }
 
+/* the supersaw: the saw at the note and six around it (the JP-8000's spacing), spread 0..1 */
+static const float SS_OFF[6] = {-0.11002313f, -0.06288439f, -0.01952356f, 0.01991221f, 0.06216538f, 0.10745242f};
+static inline float supersaw(float *ph, float p, float dt, float d)
+{
+    uint32_t k;
+    float y = 0.6f * (2.f * p - 1.f - blep(p, dt)), sides = 0.f;
+    for (k = 0; k < 6u; k++) {
+        float q = ph[k] + dt * (1.f + SS_OFF[k] * d);
+        q = q >= 1.f ? q - 1.f : q;
+        ph[k] = q;
+        sides += 2.f * q - 1.f;
+    }
+    return (y + (0.15f + 0.25f * d) * sides) * 0.55f;
+}
+/* a wavetable at a position 0..1 through its frames, the phase p */
+static inline float wavetable(uint32_t t, float pos, float p)
+{
+    float f = pos * (float)(FC_WT_FRAMES - 1u), x = p * (float)FC_WT_N, u, w, a, b;
+    uint32_t i = (uint32_t)f, j = (uint32_t)x, j1;
+    const int16_t *f0, *f1;
+    if (i >= FC_WT_FRAMES - 1u)
+        i = FC_WT_FRAMES - 2u;
+    u = f - (float)i;
+    w = x - (float)j;
+    j &= FC_WT_N - 1u;
+    j1 = (j + 1u) & (FC_WT_N - 1u);
+    f0 = FC_WT[t][i];
+    f1 = FC_WT[t][i + 1u];
+    a = (float)f0[j] + ((float)f0[j1] - (float)f0[j]) * w;
+    b = (float)f1[j] + ((float)f1[j1] - (float)f1[j]) * w;
+    return (a + (b - a) * u) * (1.f / 32767.f);
+}
+static inline float noise(fc_synth_t *s)
+{
+    s->rng = s->rng * 1664525u + 1013904223u;
+    return (float)(int32_t)s->rng * (1.f / 2147483648.f);
+}
+/* any oscillator: the plain waves by osc(), the 0.7 ones here */
+static inline float osc_any(fc_synth_t *s, uint32_t w, float p, float dt, float pw, float *ss, float spread, float pos)
+{
+    if (w == FC_W_SUPERSAW)
+        return supersaw(ss, p, dt, spread);
+    if (w == FC_W_NOISE)
+        return noise(s);
+    if (w >= FC_W_WT0)
+        return wavetable(w - FC_W_WT0, pos, p);
+    return osc(w, p, dt, pw);
+}
+
 static float mod_src(const fc_synth_t *s, const fc_voice_t *v, uint32_t src, uint32_t blk)
 {
     switch (src) {
@@ -338,18 +420,22 @@ static void voice_render(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
     uint32_t i, j, q, mode = s->sx.flt_mode, slope = s->sx.flt_slope;
     for (i = 0; i < n; i += FC_CTRL) {
         uint32_t m = n - i < FC_CTRL ? n - i : FC_CTRL, blk = i / FC_CTRL;
-        float md[FC_MD_L1RATE];
+        float md[FC_NMD];
         float lc, f, g, k, a1, a2, a3, b1 = 0.f, b2 = 0.f, b3 = 0.f, ia = v->inc_a, ib = v->inc_b;
         float bl = s->bl, sub = s->sub, fm = s->fm, pw = 0.f, drv = s->drive, dg, dc, gain;
-        for (q = 0; q < FC_MD_L1RATE; q++)
+        float pos = s->wt_pos, spr = s->spread, ga, gb;
+        for (q = 0; q < FC_NMD; q++)
             md[q] = 0.f;
         for (q = 0; q < s->nmv; q++)
             md[s->mv_dst[q]] += s->mv_amt[q] * mod_src(s, v, s->mv_src[q], blk);
-        if (s->nmv) {
-            if (md[FC_MD_PITCH] != 0.f || md[FC_MD_DETUNE] != 0.f) {
-                ia = v->inc_a * fc_exp2f(md[FC_MD_PITCH] * (1.f / 12.f));
-                ib = ia * fc_exp2f((s->detune_c + md[FC_MD_DETUNE]) * (1.f / 1200.f));
+        if (s->nmv || s->wob != 1.f) {
+            if (md[FC_MD_PITCH] != 0.f || md[FC_MD_DETUNE] != 0.f || md[FC_MD_BPITCH] != 0.f || s->wob != 1.f) {
+                ia = v->inc_a * fc_exp2f(md[FC_MD_PITCH] * (1.f / 12.f)) * s->wob;
+                ib = ia * s->b_ratio * fc_exp2f((s->detune_c + md[FC_MD_DETUNE]) * (1.f / 1200.f) +
+                                                md[FC_MD_BPITCH] * (1.f / 12.f));
             }
+            pos = fc_clampf(pos + md[FC_MD_WTPOS], 0.f, 1.f);
+            spr = fc_clampf(spr + md[FC_MD_SPREAD], 0.f, 1.f);
             bl = fc_clampf(bl + md[FC_MD_BLEV], 0.f, 1.f);
             sub = fc_clampf(sub + md[FC_MD_SUB], 0.f, 1.f);
             fm = fc_clampf(fm + md[FC_MD_FM], 0.f, 0.5f);
@@ -373,17 +459,26 @@ static void voice_render(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
         }
         dg = 0.5f + 3.5f * drv;                     /* drive: x/2 .. 4x into a soft curve */
         dc = 2.f / (1.f + drv);
+        ga = s->omode == FC_O_ADD ? 1.f : 1.f - bl; /* sync and ring: B level fades from A to the effect */
+        gb = s->omode == FC_O_RING ? 1.4f * bl : bl;
         for (j = 0; j < m; j++) {
             float x, pa, v1, v2, v3, y;
             pa = v->pa;
             if (fm > 0.f)
                 pa = wrap1(pa + fm * fc_sin_turn(v->pb));
-            x = osc(s->wa, pa, ia, pw);
-            if (bl > 0.f)
-                x += bl * osc(s->wb, v->pb, ib, pw);
+            x = osc_any(s, s->wa, pa, ia, pw, v->ssa, spr, pos);
+            if (bl > 0.f) {
+                float y2 = osc_any(s, s->wb, v->pb, ib, pw, v->ssb, spr, pos);
+                x = ga * x + gb * (s->omode == FC_O_RING ? x * y2 : y2);
+            }
             if (sub > 0.f)
                 x += sub * osc(FC_W_SQUARE, v->ps, ia * 0.5f, 0.f);
-            v->pa = wrap1(v->pa + ia);
+            v->pa += ia;
+            if (v->pa >= 1.f) {
+                v->pa -= 1.f;
+                if (s->omode == FC_O_SYNC)          /* B starts again with A */
+                    v->pb = v->pa * (ib / ia);
+            }
             v->pb = wrap1(v->pb + ib);
             v->ps = wrap1(v->ps + ia * 0.5f);
             if (drv > 0.f) {
@@ -459,6 +554,17 @@ void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n)
                 }
             }
         }
+        if (s->wob_depth > 0.f) {                   /* tape: a slow wow and a quicker flutter, on the pitch */
+            float st;
+            s->wob_ph[0] += 0.55f * (float)k * (1.f / FSF);
+            s->wob_ph[1] += 6.3f * (float)k * (1.f / FSF);
+            for (c = 0; c < 2u; c++)
+                if (s->wob_ph[c] >= 1.f)
+                    s->wob_ph[c] -= 1.f;
+            st = s->wob_depth * (0.25f * fc_sin_turn(s->wob_ph[0]) + 0.04f * fc_sin_turn(s->wob_ph[1]));
+            s->wob = fc_exp2f(st * (1.f / 12.f));
+        } else
+            s->wob = 1.f;
         ch_mix = fc_clampf(s->ch_mix + g[FC_MD_CHORUS], 0.f, 1.f);
         rv_mix = fc_clampf(s->rv_mix + g[FC_MD_REVMIX], 0.f, 1.f);
         dl_mix = fc_clampf(s->dl_mix + g[FC_MD_DLYMIX], 0.f, 1.f);
@@ -467,13 +573,42 @@ void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n)
         for (i = 0; i < FC_VOICES; i++)
             if (s->v[i].stage_a)
                 voice_render(s, &s->v[i], mono, k);
+        if (s->cr_q > 0.f || s->cr_step < 1.f)      /* the crusher: fewer samples, fewer bits */
+            for (i = 0; i < k; i++) {
+                float x = mono[i];
+                if (s->cr_step < 1.f) {
+                    s->cr_ph += s->cr_step;
+                    if (s->cr_ph >= 1.f) {
+                        s->cr_ph -= 1.f;
+                        s->cr_hold = x;
+                    }
+                    x = s->cr_hold;
+                }
+                if (s->cr_q > 0.f) {
+                    float y = x * s->cr_q;
+                    x = (float)(int32_t)(y + (y < 0.f ? -0.5f : 0.5f)) / s->cr_q;
+                }
+                mono[i] = x;
+            }
+        if (s->ph_mix > 0.f) {                       /* the phaser's all-passes sweep 300 Hz .. 3 kHz at 0.3 Hz */
+            s->ph_ph += 0.3f * (float)k * (1.f / FSF);
+            if (s->ph_ph >= 1.f)
+                s->ph_ph -= 1.f;
+            for (c = 0; c < 2u; c++) {               /* the right side a quarter turn on */
+                float p = s->ph_ph + 0.25f * (float)c, tri, tn;
+                p = p >= 1.f ? p - 1.f : p;
+                tri = p < 0.5f ? 2.f * p : 2.f - 2.f * p;
+                tn = fc_tanf(3.14159265f * 300.f * fc_exp2f(3.32f * tri) * (1.f / FSF));
+                s->ph_a[c] = (tn - 1.f) / (tn + 1.f);
+            }
+        }
         for (i = 0; i < k; i++) {
             float x = mono[i], l = x, r = x, in, out[2];
             /* chorus: two taps 1.5 .. 5.5 ms, a 0.5 Hz triangle, opposite on each side */
             s->ch_buf[s->ch_w & (FC_CH_LEN - 1u)] = x;
             if (ch_mix > 0.f) {
                 float tri = s->ch_ph < 0.5f ? 4.f * s->ch_ph - 1.f : 3.f - 4.f * s->ch_ph;
-                float d1 = 154.f + 88.f * tri, d2 = 154.f - 88.f * tri, t1, t2, w1, w2;
+                float d1 = 154.f + s->ch_depth * tri, d2 = 154.f - s->ch_depth * tri, t1, t2, w1, w2;
                 uint32_t i1 = (uint32_t)d1, i2 = (uint32_t)d2;
                 t1 = d1 - (float)i1;
                 t2 = d2 - (float)i2;
@@ -483,11 +618,29 @@ void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n)
                      s->ch_buf[(s->ch_w - i2 - 1u) & (FC_CH_LEN - 1u)] * t2;
                 l = x * (1.f - 0.4f * ch_mix) + w1 * ch_mix;
                 r = x * (1.f - 0.4f * ch_mix) + w2 * ch_mix;
-                s->ch_ph += 0.5f / FSF;
+                s->ch_ph += s->ch_rate / FSF;
                 if (s->ch_ph >= 1.f)
                     s->ch_ph -= 1.f;
             }
             s->ch_w++;
+            if (s->ph_mix > 0.f) {                   /* phaser: four all-passes a side, a little feedback */
+                float io[2];
+                io[0] = l;
+                io[1] = r;
+                for (c = 0; c < 2u; c++) {
+                    float y = io[c] + 0.4f * s->ph_y[c];
+                    uint32_t q2;
+                    for (q2 = 0; q2 < 4u; q2++) {
+                        float o2 = s->ph_a[c] * y + s->ph_z[c][q2];
+                        s->ph_z[c][q2] = y - s->ph_a[c] * o2 + FC_ANTI_DENORMAL;
+                        y = o2;
+                    }
+                    s->ph_y[c] = y;
+                    io[c] += s->ph_mix * y;
+                }
+                l = io[0] * (1.f - 0.3f * s->ph_mix);
+                r = io[1] * (1.f - 0.3f * s->ph_mix);
+            }
             /* delay: 16-bit memory, a low-pass (tone) and a gentle high-pass in the feedback, stereo or ping-pong */
             if (dl_mix > 0.f) {
                 uint32_t rd = (s->dl_w - s->dl_len) & (FC_DLY_LEN - 1u), w = s->dl_w & (FC_DLY_LEN - 1u);

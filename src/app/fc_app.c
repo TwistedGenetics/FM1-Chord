@@ -40,10 +40,10 @@ static volatile uint8_t fc_clock_seen;           /* MIDI clock arrived lately (t
 static volatile uint32_t fc_clock_ms;
 
 enum { PG_PLAY, PG_EDIT, PG_EDIT2, PG_SOUND, PG_AMP, PG_FX, PG_MODE, PG_ARP, PG_GLOBAL, PG_SAVE, PG_LEARN,
-       PG_MACRO, PG_FILTER, PG_MENV, PG_LFO, PG_DELAY, PG_N };
+       PG_MACRO, PG_FILTER, PG_MENV, PG_LFO, PG_DELAY, PG_OSC, PG_OSC2, PG_LOFI, PG_GLOBAL2, PG_N };
 static const char *const FC_PG_NAME[PG_N] = {"PLAY", "CHORD", "CHORD 2", "SOUND", "AMP", "FX", "PLAYING", "ARP",
                                              "GLOBAL", "SAVE", "LEARN", "MACRO", "FILTER", "MOD ENV", "LFO",
-                                             "DELAY"};
+                                             "DELAY", "OSC", "OSC 2", "LO-FI", "GLOBAL 2"};
 static uint32_t fc_page = PG_PLAY;
 static uint32_t fc_sel;                          /* the key being edited (the last pressed) */
 static uint32_t fc_keys_prev, fc_btn_prev;
@@ -104,17 +104,19 @@ static void fc_out_off(void *u, uint32_t n)
 
 /* ------------------------------------------------------------------------------------------------ storage --- */
 static uint32_t fc_obj_of(uint32_t slot) { return slot < 10u ? OBJ_PAT0 : OBJ_PAT1; }
-/* a store object of ten sets into fc_obj, laid out as now: one saved by 0.1 .. 0.5 (336-byte sets) is spread out
- * to 376 bytes a set, version 1 sets whose sound part 2 fc_set_check fills in. The bytes read, or < 0. */
+/* a store object of ten sets into fc_obj, laid out as now: one saved by 0.1 .. 0.5 (336-byte sets) or 0.6 (376) is
+ * spread out to 384 bytes a set; fc_set_check fills in the parts of the sound those versions didn't have. The
+ * bytes read, or < 0. */
 static int fc_obj_load(uint32_t obj)
 {
     int n = plat_store_load(obj, fc_obj, sizeof fc_obj);
-    uint32_t i, k;
-    if (n == (int)(10u * FC_SET_BYTES_V1)) {
+    uint32_t i, k, old = n == (int)(10u * FC_SET_BYTES_V1) ? FC_SET_BYTES_V1 :
+                          n == (int)(10u * FC_SET_BYTES_V2) ? FC_SET_BYTES_V2 : 0u;
+    if (old) {
         for (i = 10u; i-- > 0u;) {
-            for (k = FC_SET_BYTES_V1; k-- > 0u;)
-                fc_obj[i * FC_SET_BYTES + k] = fc_obj[i * FC_SET_BYTES_V1 + k];
-            for (k = FC_SET_BYTES_V1; k < FC_SET_BYTES; k++)
+            for (k = old; k-- > 0u;)
+                fc_obj[i * FC_SET_BYTES + k] = fc_obj[i * old + k];
+            for (k = old; k < FC_SET_BYTES; k++)
                 fc_obj[i * FC_SET_BYTES + k] = 0;
         }
         n = (int)(10u * FC_SET_BYTES);
@@ -172,7 +174,7 @@ static int fc_load_set(uint32_t idx)
     fc_player_stop(&fc_pl);
     fc_synth_all_off(&fc_syn);
     fc_set = t;
-    fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx);
+    fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx, &fc_set.s3);
     fc_unlock();
     fc_g.cur_set = (uint8_t)idx;
     fc_dirty = 0;
@@ -202,7 +204,8 @@ enum {
     P_STYPE, P_CUT, P_RES, P_FENV, P_AA, P_AD, P_AS, P_AR, P_CHO, P_REV, P_SIZE, P_LEVEL, P_PMODE, P_STRUM, P_SDIR,
     P_HUMAN, P_RATE, P_ADIR, P_AOCT, P_GATE, P_MCH, P_OUT, P_CLK, P_VEL, P_SLOT,
     P_M1, P_M2, P_M3, P_M4, P_FMODE, P_SLOPE, P_DRIVE, P_FTRK, P_MA, P_MD, P_MS, P_MR, P_L1R, P_L1W, P_L2R, P_L2W,
-    P_DTIME, P_DFB, P_DMIX, P_DTONE
+    P_DTIME, P_DFB, P_DMIX, P_DTONE,
+    P_WA, P_WB, P_WTPOS, P_SPREAD, P_BSEMI, P_BMODE, P_BLEV, P_SUB, P_BITS, P_CRATE, P_WOB, P_PHASER, P_VOICES
 };
 static const uint8_t FC_PAGE_P[PG_N][4] = {
     {P_SET, P_OCT, P_TRANS, P_TEMPO},         {P_ROOT, P_QUAL, P_INV, P_VOICE},
@@ -213,13 +216,18 @@ static const uint8_t FC_PAGE_P[PG_N][4] = {
     {P_NONE, P_NONE, P_NONE, P_NONE},         {P_M1, P_M2, P_M3, P_M4},
     {P_FMODE, P_SLOPE, P_DRIVE, P_FTRK},      {P_MA, P_MD, P_MS, P_MR},
     {P_L1R, P_L1W, P_L2R, P_L2W},             {P_DTIME, P_DFB, P_DMIX, P_DTONE},
+    {P_WA, P_WB, P_WTPOS, P_SPREAD},          {P_BSEMI, P_BMODE, P_BLEV, P_SUB},
+    {P_BITS, P_CRATE, P_WOB, P_PHASER},       {P_VOICES, P_NONE, P_NONE, P_NONE},
 };
 static const char *const FC_P_LABEL[] = {
     "", "SET", "OCT", "TRANS", "TEMPO", "ROOT", "TYPE", "INV", "VOICE", "BASS", "OCTAVE", "LATCH", "V.LEAD",
     "SOUND", "CUTOFF", "RESO", "F.ENV", "ATTACK", "DECAY", "SUSTAIN", "RELEASE", "CHORUS", "REVERB", "SIZE", "LEVEL",
     "MODE", "STRUM", "DIR", "HUMAN", "RATE", "DIR", "OCTAVES", "GATE", "MIDI CH", "OUTPUT", "CLOCK", "VELO", "SLOT",
     "MACRO 1", "MACRO 2", "MACRO 3", "MACRO 4", "TYPE", "SLOPE", "DRIVE", "KEY TRK", "ATTACK", "DECAY", "SUSTAIN",
-    "RELEASE", "L1 RATE", "L1 WAVE", "L2 RATE", "L2 WAVE", "TIME", "FEEDBK", "MIX", "TONE"};
+    "RELEASE", "L1 RATE", "L1 WAVE", "L2 RATE", "L2 WAVE", "TIME", "FEEDBK", "MIX", "TONE",
+    "WAVE A", "WAVE B", "WT POS", "SPREAD", "B TUNE", "B MODE", "B LEVEL", "SUB", "BITS", "RATE", "WOBBLE", "PHASER", "VOICES"};
+static const char *const FC_WAVE_S[FC_NW] = {"SAW", "SQUARE", "TRI", "SINE", "ORGAN", "PULSE", "SUPER", "NOISE",
+    "VOX", "PWM WT", "DIGI", "GLASS"};
 /* a macro knob's label: what it moves first (the editor sets that up), else MACRO n */
 static const char *const FC_MD_SHORT[FC_NMD] = {"", "PITCH", "CUTOFF", "RESO", "OSC B", "FM", "WIDTH", "VOLUME",
     "DETUNE", "SUB", "DRIVE", "F.ENV", "LFO1 RT", "DLY MIX", "REV MIX", "CHORUS"};
@@ -371,6 +379,39 @@ static void fc_ptext(uint32_t p, char *b)
     case P_DFB: fc_num(b, fc_set.sx.dly_fb, 0); break;
     case P_DMIX: if (fc_set.sx.dly_mix) fc_num(b, fc_set.sx.dly_mix, 0); else fc_cpy(b, "OFF"); break;
     case P_DTONE: fc_num(b, fc_set.sx.dly_tone, 0); break;
+    case P_WA: fc_cpy(b, FC_WAVE_S[o->wave_a % FC_NW]); break;
+    case P_WB: fc_cpy(b, FC_WAVE_S[o->wave_b % FC_NW]); break;
+    case P_WTPOS: fc_num(b, fc_set.s3.wt_pos, 0); break;
+    case P_SPREAD: fc_num(b, fc_set.s3.spread, 0); break;
+    case P_BSEMI: fc_num(b, fc_set.s3.b_semi, 1); break;
+    case P_BMODE: fc_cpy(b, fc_set.s3.osc_mode == FC_O_SYNC ? "SYNC" : fc_set.s3.osc_mode == FC_O_RING ? "RING" : "ADD"); break;
+    case P_BLEV: fc_num(b, o->b_level, 0); break;
+    case P_SUB: fc_num(b, o->sub, 0); break;
+    case P_BITS:
+        if (!fc_set.s3.crush_bits)
+            fc_cpy(b, "OFF");
+        else {
+            uint32_t k;
+            fc_num(b, 16 - (int32_t)((uint32_t)fc_set.s3.crush_bits * 13u + 63u) / 127, 0);
+            for (k = 0; b[k]; k++)
+                ;
+            fc_cpy(b + k, "BIT");
+        }
+        break;
+    case P_CRATE:
+        if (!fc_set.s3.crush_rate)
+            fc_cpy(b, "OFF");
+        else {                                   /* the rate it's held to, in kHz */
+            uint32_t k;
+            fc_num(b, (int32_t)(44.1f * fc_exp2f(-(float)fc_set.s3.crush_rate * (5.f / 127.f)) + 0.5f), 0);
+            for (k = 0; b[k]; k++)
+                ;
+            fc_cpy(b + k, "K");
+        }
+        break;
+    case P_WOB: fc_num(b, fc_set.s3.wobble, 0); break;
+    case P_PHASER: fc_num(b, fc_set.s3.fx & 0x3Fu, 0); break;
+    case P_VOICES: fc_num(b, fc_g.voices ? fc_g.voices : (int32_t)FC_VOICES, 0); break;
     default: break;
     }
 }
@@ -437,6 +478,7 @@ static void fc_pturn(uint32_t p, int32_t d)
         int32_t t = lim32((int32_t)o->type + d, 0, (int32_t)FC_NSOUNDS - 1);
         *o = FC_SOUNDS[t].snd;
         fc_set.sx = FC_SOUNDS[t].sx;             /* with its filter mode, LFOs, matrix, macros and delay */
+        fc_set.s3 = FC_SOUNDS[t].s3;
         sound = 1;
         break;
     }
@@ -460,6 +502,21 @@ static void fc_pturn(uint32_t p, int32_t d)
     case P_DFB: v8 = &fc_set.sx.dly_fb; break;
     case P_DMIX: v8 = &fc_set.sx.dly_mix; break;
     case P_DTONE: v8 = &fc_set.sx.dly_tone; break;
+    case P_WA: o->wave_a = (uint8_t)lim32(o->wave_a + d, 0, FC_NW - 1); sound = 1; break;
+    case P_WB: o->wave_b = (uint8_t)lim32(o->wave_b + d, 0, FC_NW - 1); sound = 1; break;
+    case P_WTPOS: v8 = &fc_set.s3.wt_pos; break;
+    case P_SPREAD: v8 = &fc_set.s3.spread; break;
+    case P_BSEMI: fc_set.s3.b_semi = (int8_t)lim32(fc_set.s3.b_semi + d, -24, 24); sound = 1; break;
+    case P_BMODE: fc_set.s3.osc_mode = (uint8_t)lim32(fc_set.s3.osc_mode + d, 0, FC_NOMODE - 1); sound = 1; break;
+    case P_BLEV: v8 = &o->b_level; break;
+    case P_SUB: v8 = &o->sub; break;
+    case P_BITS: v8 = &fc_set.s3.crush_bits; break;
+    case P_CRATE: v8 = &fc_set.s3.crush_rate; break;
+    case P_WOB: v8 = &fc_set.s3.wobble; break;
+    case P_PHASER:
+        fc_set.s3.fx = (uint8_t)((fc_set.s3.fx & 0xC0u) | (uint32_t)lim32((int32_t)(fc_set.s3.fx & 0x3Fu) + d2, 0, 63));
+        sound = 1;
+        break;
     case P_CUT: v8 = &o->cutoff; break;
     case P_RES: v8 = &o->res; break;
     case P_FENV: v8 = &o->fenv; break;
@@ -483,6 +540,13 @@ static void fc_pturn(uint32_t p, int32_t d)
     case P_OUT: fc_g.output = (uint8_t)lim32(fc_g.output + d, 0, 2); fc_touch(); return;
     case P_CLK: fc_g.clock = (uint8_t)lim32(fc_g.clock + d, 0, 1); fc_touch(); return;
     case P_VEL: fc_g.velocity = (uint8_t)lim32(fc_g.velocity + d2, 1, 127); fc_touch(); return;
+    case P_VOICES:
+        fc_g.voices = (uint8_t)lim32((fc_g.voices ? fc_g.voices : (int32_t)FC_VOICES) + d, 4, FC_VOICES);
+        fc_lock();
+        fc_synth_voices(&fc_syn, fc_g.voices);
+        fc_unlock();
+        fc_touch();
+        return;
     case P_SLOT:
         fc_sv_i = (uint32_t)lim32((int32_t)fc_sv_i + d, 0, (int32_t)fc_sv_n - 1);
         fc_save_slot = fc_sv[fc_sv_i] & 0x3Fu;
@@ -496,7 +560,7 @@ static void fc_pturn(uint32_t p, int32_t d)
     }
     if (sound) {
         fc_lock();
-        fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx);
+        fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx, &fc_set.s3);
         fc_unlock();
     }
     fc_dirty = 1;
@@ -563,13 +627,13 @@ static void fc_button(uint32_t b)
     switch (b) {
     case B_HOME: fc_go(fc_page == PG_PLAY ? PG_MACRO : PG_PLAY); break;
     case B_EDIT: fc_go(fc_page == PG_EDIT ? PG_EDIT2 : PG_EDIT); break;
-    case B_ENV:                                  /* SOUND, FILTER, AMP, MOD ENV, LFO, round again */
-        fc_go(fc_page == PG_SOUND ? PG_FILTER : fc_page == PG_FILTER ? PG_AMP : fc_page == PG_AMP ? PG_MENV :
-              fc_page == PG_MENV ? PG_LFO : PG_SOUND);
+    case B_ENV:                                  /* SOUND, OSC, OSC 2, FILTER, AMP, MOD ENV, LFO, round again */
+        fc_go(fc_page == PG_SOUND ? PG_OSC : fc_page == PG_OSC ? PG_OSC2 : fc_page == PG_OSC2 ? PG_FILTER :
+              fc_page == PG_FILTER ? PG_AMP : fc_page == PG_AMP ? PG_MENV : fc_page == PG_MENV ? PG_LFO : PG_SOUND);
         break;
-    case B_FX: fc_go(fc_page == PG_FX ? PG_DELAY : PG_FX); break;
+    case B_FX: fc_go(fc_page == PG_FX ? PG_DELAY : fc_page == PG_DELAY ? PG_LOFI : PG_FX); break;
     case B_ARP: fc_go(fc_page == PG_MODE ? PG_ARP : PG_MODE); break;
-    case B_GLO: fc_go(PG_GLOBAL); break;
+    case B_GLO: fc_go(fc_page == PG_GLOBAL ? PG_GLOBAL2 : PG_GLOBAL); break;
     case B_LFO:
         fc_set.play.latch ^= 1u;
         if (!fc_set.play.latch) {
@@ -741,7 +805,7 @@ void fc_app_input(void)
         if (fc_page == PG_SOUND || fc_page == PG_AMP) lit |= 1u << B_ENV;
         if (fc_page == PG_FX) lit |= 1u << B_FX;
         if (fc_page == PG_MODE || fc_page == PG_ARP) lit |= 1u << B_ARP;
-        if (fc_page == PG_GLOBAL) lit |= 1u << B_GLO;
+        if (fc_page == PG_GLOBAL || fc_page == PG_GLOBAL2) lit |= 1u << B_GLO;
         if (fc_page == PG_SAVE) lit |= 1u << B_SAVE;
         if (fc_page == PG_LEARN) lit |= 1u << B_REC;
         plat_keys_dim(fc_page == PG_LEARN ? 0u : fc_set_used_keys(&fc_set));
@@ -972,9 +1036,10 @@ void fc_app_init(void)
     fc_player_init(&fc_pl, &out);
     if (plat_store_load(OBJ_SOUND, &fc_g, sizeof fc_g) != (int)sizeof fc_g || fc_globals_check(&fc_g))
         fc_globals_init(&fc_g);
+    fc_synth_voices(&fc_syn, fc_g.voices ? fc_g.voices : FC_VOICES);
     if (fc_load_set(fc_g.cur_set) && fc_load_set(FC_FACTORY0)) {
         fc_set_init(&fc_set, "EMPTY");           /* (only if the factory content were broken) */
-        fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx);
+        fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx, &fc_set.s3);
     }
     fc_touch();
 }

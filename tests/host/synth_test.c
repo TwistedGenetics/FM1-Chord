@@ -92,7 +92,7 @@ int main(int argc, char **argv)
         clock_t t0;
         double ns;
         fc_synth_init(&syn, rv, dly);
-        fc_synth_sound(&syn, &FC_SOUNDS[si].snd, &FC_SOUNDS[si].sx);
+        fc_synth_sound(&syn, &FC_SOUNDS[si].snd, &FC_SOUNDS[si].sx, &FC_SOUNDS[si].s3);
         t0 = clock();
         for (k = 0; k < 4u; k++) {
             uint8_t nt[FC_MAXN];
