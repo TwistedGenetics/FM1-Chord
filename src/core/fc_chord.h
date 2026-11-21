@@ -16,7 +16,8 @@
 enum {
     FC_Q_MAJ, FC_Q_MIN, FC_Q_7, FC_Q_MAJ7, FC_Q_M7, FC_Q_9, FC_Q_M9, FC_Q_11, FC_Q_13, FC_Q_SUS2, FC_Q_SUS4,
     FC_Q_DIM, FC_Q_AUG, FC_Q_ADD9, FC_Q_6, FC_Q_M6, FC_Q_POWER, FC_Q_M11, FC_Q_M7B5, FC_Q_DIM7, FC_Q_MAJ9,
-    FC_Q_7SUS4, FC_NQ_NAMED
+    FC_Q_7SUS4, FC_Q_7S9, FC_Q_7B9, FC_Q_7S5, FC_Q_MMAJ7, FC_Q_MAJ7S11, FC_Q_7S11, FC_Q_M13, FC_Q_69, /* 0.3 */
+    FC_NQ_NAMED
 };
 #define FC_Q_CUSTOM 31u           /* the notes are fc_chord_t.custom: a 24-bit mask of semitones above the root */
 
@@ -26,12 +27,13 @@ enum { FC_V_CLOSE, FC_V_OPEN, FC_V_DROP2, FC_V_DROP3, FC_V_SPREAD, FC_NV };
 typedef struct {
     uint8_t root;                 /* pitch class 0 = C .. 11 = B */
     uint8_t quality;              /* FC_Q_*, FC_Q_CUSTOM, or FC_EMPTY */
-    uint8_t custom[3];            /* FC_Q_CUSTOM: bit i of (custom[0] | custom[1] << 8 | custom[2] << 16) = root + i */
+    uint8_t custom[3];            /* FC_Q_CUSTOM: bit i of (custom[0] | custom[1] << 8 | custom[2] << 16 |
+                                   * custom_hi << 24) = root + i: up to 31 semitones above the root */
     uint8_t inversion;            /* 0 root position, 1 first, 2 second, 3 third (limited to the chord's notes - 1) */
     uint8_t voicing;              /* FC_V_* */
     uint8_t bass;                 /* slash bass pitch class 0..11, or FC_NOBASS */
     int8_t octave;                /* this chord's own octave, -2 .. +2 */
-    uint8_t reserved;
+    uint8_t custom_hi;            /* FC_Q_CUSTOM: semitones 24..31 (0.3; 0 in older sets: the same chords) */
 } fc_chord_t;
 
 /* the chord's tones as semitones above its root, ascending (close position, before inversion); returns how many */

@@ -34,6 +34,14 @@ export const QUALITIES = [
   { s: "dim7", name: "dim7", iv: [0, 3, 6, 9] },
   { s: "maj9", name: "maj9", iv: [0, 4, 7, 11, 14] },
   { s: "7sus4", name: "7sus4", iv: [0, 5, 7, 10] },
+  { s: "7#9", name: "7#9", iv: [0, 4, 7, 10, 15] },          // 0.3
+  { s: "7b9", name: "7b9", iv: [0, 4, 7, 10, 13] },
+  { s: "7#5", name: "7#5", iv: [0, 4, 8, 10] },
+  { s: "mmaj7", name: "m(maj7)", iv: [0, 3, 7, 11] },
+  { s: "maj7#11", name: "maj7#11", iv: [0, 4, 7, 11, 18] },
+  { s: "7#11", name: "7#11", iv: [0, 4, 7, 10, 18] },
+  { s: "m13", name: "m13", iv: [0, 3, 7, 10, 14, 21] },
+  { s: "69", name: "6/9", iv: [0, 4, 7, 9, 14] },
 ];
 export const NQ_NAMED = QUALITIES.length;
 export const NOTE_NAMES = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
@@ -41,7 +49,7 @@ export const VOICINGS = ["close", "open", "drop2", "drop3", "spread"];
 export const VOICING_LABELS = ["Close", "Open", "Drop 2", "Drop 3", "Spread"];
 export const INVERSION_LABELS = ["Root", "1st", "2nd", "3rd"];
 const ALIASES = { maj: "", min: "m", M7: "maj7", "-": "m", "-7": "m7", "ø": "m7b5", o: "dim", o7: "dim7", "+": "aug",
-  "6/9": "6", sus: "sus4", power: "5" };
+  "6/9": "69", sus: "sus4", power: "5", aug7: "7#5", "m(maj7)": "mmaj7" };
 
 export const emptyChord = () => ({ root: 0, quality: EMPTY, custom: [0, 0, 0], inversion: 0, voicing: 0, bass: NOBASS,
   octave: 0 });
@@ -52,8 +60,8 @@ export function midiName(n) { return noteName(n) + (Math.floor(n / 12) - 1); }
 
 export function tones(c) {
   if (c.quality === Q_CUSTOM) {
-    const m = c.custom[0] | (c.custom[1] << 8) | (c.custom[2] << 16), iv = [];
-    for (let i = 0; i < 24 && iv.length < MAXN - 1; i++) if (m & (1 << i)) iv.push(i);
+    const m = (c.custom[0] | (c.custom[1] << 8) | (c.custom[2] << 16) | ((c.custom[3] | 0) << 24)) >>> 0, iv = [];
+    for (let i = 0; i < 32 && iv.length < MAXN - 1; i++) if ((m >>> i) & 1) iv.push(i);
     return iv;
   }
   if (c.quality >= NQ_NAMED) return [];
@@ -151,11 +159,46 @@ export function qualitySuffix(q) {
   return q < NQ_NAMED ? QUALITIES[q].s : "?";
 }
 
+// the named chord the notes come nearest (fc_chord.c guess): every note a chord tone, the fewest tones missing (a
+// missing 5th counts 1, any other 2; at most 2); roots from the lowest note's pitch upwards; the earlier quality on a tie
+function guess(nt) {
+  let have = 0, best = 3, out = null;
+  for (const x of nt) have |= 1 << (x % 12);
+  const low = nt[0] % 12;
+  for (let k = 0; k < 12; k++) {
+    const r = (low + k) % 12;
+    if (!(have & (1 << r))) continue;
+    for (let q = 0; q < NQ_NAMED; q++) {
+      const qm = pcMask(QUALITIES[q].iv, r);
+      if (have & ~qm) continue;
+      const miss = qm & ~have;
+      let cost = 0;
+      const big = QUALITIES[q].iv.length >= 5;
+      for (let b = 0; b < 12; b++) if (miss & (1 << b)) { const d = (b + 12 - r) % 12; cost += d === 7 || (big && (d === 2 || d === 5)) ? 1 : 2; }
+      if (cost < best) { best = cost; out = { root: r, q }; }
+    }
+  }
+  return best <= 2 ? out : null;
+}
+
+// a custom chord is named from its notes (fc_chord.c custom_name)
+function customName(c) {
+  const nt = chordNotes(c, 0);
+  const out = { root: c.root % 12, q: Q_CUSTOM, bass: NOBASS };
+  if (!nt.length) return out;
+  if (nt.every((x) => x % 12 === nt[0] % 12)) return { root: nt[0] % 12, q: EMPTY, bass: NOBASS };
+  const g = guess(nt) || (nt.length > 2 ? guess(nt.slice(1)) : null);
+  if (!g) return out;
+  return { root: g.root, q: g.q, bass: nt[0] % 12 !== g.root ? nt[0] % 12 : NOBASS };
+}
+
 // fc_chord_name: "Cm9/G"
 export function chordName(c) {
   if (isEmpty(c)) return "";
-  let s = noteName(c.root) + qualitySuffix(c.quality);
-  if (c.bass < 12 && c.bass !== c.root % 12) s += "/" + noteName(c.bass);
+  let root = c.root % 12, q = c.quality, bass = c.bass;
+  if (q === Q_CUSTOM) ({ root, q, bass } = customName(c));
+  let s = noteName(root) + (q === EMPTY ? "" : qualitySuffix(q));
+  if (bass < 12 && bass !== root) s += "/" + noteName(bass);
   return s;
 }
 
@@ -198,10 +241,10 @@ export function identify(notes) {
     }
   }
   let m = 0;
-  for (const x of s) if (x - low < 24) m |= 1 << (x - low);
+  for (const x of s) if (x - low < 32) m |= 1 << (x - low);
   c.root = low % 12;
   c.quality = Q_CUSTOM;
-  c.custom = [m & 0xff, (m >> 8) & 0xff, (m >> 16) & 0xff];
+  c.custom = [m & 0xff, (m >> 8) & 0xff, (m >> 16) & 0xff, (m >>> 24) & 0xff];
   place(c, low);
   return c;
 }
@@ -220,6 +263,18 @@ export function parseChord(text) {
   const sym = words[0];
   const [root, k] = pitch(sym);
   let tail = sym.slice(k), bass = NOBASS;
+  const cm = /^\*([0-9.]+)(?:\/(.+))?$/.exec(tail);     // custom notes: "C*0.3.7.14" (semitones above the root)
+  if (cm) {
+    let m = 0;
+    for (const x of cm[1].split(".")) { const v = +x; if (!(v >= 0 && v < 32)) throw new Error(`bad custom note in "${text}"`); m |= 1 << v; }
+    const c = { root, quality: Q_CUSTOM, custom: [m & 0xff, (m >> 8) & 0xff, (m >> 16) & 0xff, (m >>> 24) & 0xff], inversion: 0, voicing: 0,
+      bass: cm[2] ? pitch(cm[2])[0] : NOBASS, octave: 0 };
+    for (const w of words.slice(1)) {
+      if (/^[+-][0-2]$/.test(w)) c.octave = +w;
+      else throw new Error(`unknown word "${w}" in "${text}"`);
+    }
+    return c;
+  }
   if (tail.includes("/")) {
     const i = tail.lastIndexOf("/");
     const b = tail.slice(i + 1);
@@ -242,7 +297,11 @@ export function parseChord(text) {
 }
 export function formatChord(c) {
   if (isEmpty(c)) return "-";
-  if (c.quality === Q_CUSTOM) return chordName(c);
+  if (c.quality === Q_CUSTOM) {
+    const w = [noteName(c.root) + "*" + tones(c).join(".") + (c.bass < 12 ? "/" + noteName(c.bass) : "")];
+    if (c.octave) w.push((c.octave > 0 ? "+" : "") + c.octave);
+    return w.join(" ");
+  }
   const w = [chordName(c)];
   if (c.inversion) w.push("i" + c.inversion);
   if (c.voicing) w.push(VOICINGS[c.voicing]);

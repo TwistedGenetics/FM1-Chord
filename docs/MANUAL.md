@@ -7,7 +7,7 @@ along the bottom. Every page's values are on K1–K4.
 |---|---|
 | **Keys** | play the chord on that key (and select it for editing). Empty keys play nothing |
 | **OCT− / OCT+** | the whole set down / up an octave (−3..+3). Both held 5 s: the update mode (every FM-1 firmware) |
-| **PRESET** | the chord set: the five factory sets, then your user sets |
+| **PRESET** | the chord set: the 118 factory sets (the 18 FM1-Chord sets, then J6 01 … J6 100), then your user sets |
 | **SELECT** | the key to edit (opens the CHORD page) |
 | **ALGO** | tempo |
 | **HOME** | PLAY page: SET, OCT, TRANS(pose), TEMPO |

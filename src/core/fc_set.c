@@ -103,7 +103,7 @@ int fc_set_check(fc_set_t *s)
         fc_chord_t *c = &s->ch[i];
         if (c->quality != FC_EMPTY && c->quality != FC_Q_CUSTOM && c->quality >= FC_NQ_NAMED)
             c->quality = FC_EMPTY;
-        if (c->quality == FC_Q_CUSTOM && !(c->custom[0] | c->custom[1] | c->custom[2]))
+        if (c->quality == FC_Q_CUSTOM && !(c->custom[0] | c->custom[1] | c->custom[2] | c->custom_hi))
             c->quality = FC_EMPTY;
         c->root %= 12u;
         c->inversion = lim(c->inversion, 0, 3);
@@ -120,16 +120,21 @@ void fc_globals_init(fc_globals_t *g)
     zero(g, sizeof *g);
     g->magic[0] = 'F';
     g->magic[1] = 'G';
-    g->version = 1;
-    g->cur_set = 64;                          /* the first factory set */
+    g->version = 2;
+    g->cur_set = FC_FACTORY0;                 /* the first factory set */
     g->velocity = 100;
     g->midi_in_ch = 16;
 }
 
 int fc_globals_check(fc_globals_t *g)
 {
-    if (g->magic[0] != 'F' || g->magic[1] != 'G' || g->version != 1u)
+    if (g->magic[0] != 'F' || g->magic[1] != 'G' || g->version < 1u || g->version > 2u)
         return -1;
+    if (g->version == 1u) {                   /* 0.1 / 0.2 numbered factory sets from 64 */
+        if (g->cur_set >= 64u)
+            g->cur_set = (uint8_t)(FC_FACTORY0 + (g->cur_set - 64u));
+        g->version = 2;
+    }
     g->midi_ch &= 15u;
     g->output = lim(g->output, 0, 2);
     g->clock = lim(g->clock, 0, 1);

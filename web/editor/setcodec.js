@@ -51,6 +51,7 @@ export function encodeSet(s) {
     b[o] = c.root % 12; b[o + 1] = c.quality;
     b[o + 2] = c.custom[0] & 0xff; b[o + 3] = c.custom[1] & 0xff; b[o + 4] = c.custom[2] & 0xff;
     b[o + 5] = c.inversion; b[o + 6] = c.voicing; b[o + 7] = c.bass; b[o + 8] = c.octave & 0xff;
+    b[o + 9] = c.quality === Q_CUSTOM ? (c.custom[3] | 0) & 0xff : 0;
   }
   return b;
 }
@@ -69,8 +70,9 @@ export function decodeSet(b) {
     const o = 64 + 10 * k;
     let q = b[o + 1];
     if (q !== EMPTY && q !== Q_CUSTOM && q >= NQ_NAMED) q = EMPTY;
+    if (q === Q_CUSTOM && !(b[o + 2] | b[o + 3] | b[o + 4] | b[o + 9])) q = EMPTY;
     if (q === EMPTY) { s.chords.push(emptyChord()); continue; }
-    s.chords.push({ root: b[o] % 12, quality: q, custom: [b[o + 2], b[o + 3], b[o + 4]], inversion: Math.min(b[o + 5], 3),
+    s.chords.push({ root: b[o] % 12, quality: q, custom: [b[o + 2], b[o + 3], b[o + 4], b[o + 9]], inversion: Math.min(b[o + 5], 3),
       voicing: Math.min(b[o + 6], 4), bass: b[o + 7] === NOBASS ? NOBASS : b[o + 7] % 12,
       octave: clamp(s8(b[o + 8]), -2, 2) });
   }

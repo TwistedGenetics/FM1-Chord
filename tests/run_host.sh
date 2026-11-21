@@ -22,6 +22,10 @@ $CC $W tests/host/synth_test.c src/dsp/fc_synth.c $CORE -o build/host/synth_test
 build/host/synth_test build/host
 python3 tools/gen_presets.py --bin build/host/presets
 node tests/host/presets_xcheck.mjs build/host/presets
+# shellcheck disable=SC2086
+$CC $W tests/host/sets_dump.c $CORE -o build/host/sets_dump
+build/host/sets_dump | node tests/host/sets_xcheck.mjs
+
 # the app on a simulated FM-1 (X0X's screen code as it is, with stubs for the hardware)
 # shellcheck disable=SC2086
 $CC $W -Wno-unused-parameter -Wno-sign-compare -Ix0x-firmware/firmware/src tests/host/fc_host.c src/dsp/fc_synth.c $CORE -o build/host/fc_host

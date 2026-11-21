@@ -5,18 +5,19 @@ are packed 7 to 8: a byte holding the top bits of the next seven, then those sev
 (`pack7` in `web/editor/setcodec.js`, `fc_ed_pack` in `src/app/fc_editor.c`). Replies come back in the same frame
 with the same `cmd`.
 
-Slots: `0`–`19` user sets (in flash), `64 + n` factory set *n*, `127` the **working** set (what the keys play now;
-not saved).
+Set numbers: `0`–`19` user sets (in flash), `127` the **working** set (what the keys play now; not saved),
+`128 + n` factory set *n*. From protocol 2 (0.3) a set number is sent as **two bytes, high then low** (`n >> 7`,
+`n & 127`): factory set 0 is `01 00`, the working set `00 7F`. (Protocol 1, 0.1–0.2: one byte, factory sets from 64.)
 
 | cmd | Name | Request | Reply |
 |---|---|---|---|
 | 1 | INFO (Felucca's) | — | name (ASCII, 0-ended), six 0s |
 | 25 | PING (Felucca's) | — | 0 |
-| 40 | FC_INFO | — | name (ASCII, 0-ended), protocol (1), factory sets, user slots (20), current set, working set changed (0/1) |
-| 41 | SET_GET | slot | slot, ok (1/0), then if ok: the 336-byte set packed (384 bytes) |
-| 42 | SET_PUT | slot, the set packed | slot, rc: 0 ok, 1 wrong size, 2 not a set, 3 flash write failed, 4 no such slot. A user slot is saved to flash; if it is the current set, or slot 127, the keys play it at once |
+| 40 | FC_INFO | — | name (ASCII, 0-ended), protocol (2), factory sets, user slots (20), current set (2 bytes), working set changed (0/1) |
+| 41 | SET_GET | set (2 bytes) | set (2 bytes), ok (1/0), then if ok: the 336-byte set packed (384 bytes) |
+| 42 | SET_PUT | set (2 bytes), the set packed | set (2 bytes), rc: 0 ok, 1 wrong size, 2 not a set, 3 flash write failed, 4 no such slot. A user slot is saved to flash; if it is the current set, or the working set, the keys play it at once |
 | 43 | NAMES | — | 20, then per user slot: used (1/0), 16 name bytes |
-| 44 | SELECT | slot | slot, rc (0 ok, 1 nothing there). Remembered across restarts |
+| 44 | SELECT | set (2 bytes) | set (2 bytes), rc (0 ok, 1 nothing there). Remembered across restarts |
 | 45 | KEY | key 0–26, velocity (0 = up) | none: plays the key as if pressed (the editor's audition) |
 | 46 | GLOBALS_GET | — | the 16-byte settings packed |
 | 47 | GLOBALS_PUT | the 16-byte settings packed | rc |

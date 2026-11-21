@@ -40,10 +40,11 @@ function libLabel() {
   const sel = $("#lib");
   sel.innerHTML = "";
   const g1 = document.createElement("optgroup"); g1.label = "Factory";
-  st.factory.forEach((s, i) => g1.append(new Option(s.name, `f${i}`)));
+  const gj = document.createElement("optgroup"); gj.label = "J6: the Roland J-6's chord sets";
+  st.factory.forEach((s, i) => (s.name.startsWith("J6 ") ? gj : g1).append(new Option(s.name, `f${i}`)));
   const g2 = document.createElement("optgroup"); g2.label = "My sets (this device)";
   st.mine.forEach((s, i) => g2.append(new Option(s.name || `SET ${i + 1}`, `m${i}`)));
-  sel.append(g1); if (st.mine.length) sel.append(g2);
+  sel.append(g1); if (gj.children.length) sel.append(gj); if (st.mine.length) sel.append(g2);
   sel.value = (st.cur.kind === "factory" ? "f" : "m") + st.cur.i;
 }
 function openSet(kind, i) {

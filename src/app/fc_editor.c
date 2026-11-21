@@ -5,7 +5,7 @@
 enum { FC_ED_INFO = 40, FC_ED_SET_GET, FC_ED_SET_PUT, FC_ED_NAMES, FC_ED_SELECT, FC_ED_KEY, FC_ED_GLOB_GET,
        FC_ED_GLOB_PUT };
 #define FC_ED_WORKING 127u
-#define FC_ED_PROTO 1u
+#define FC_ED_PROTO 2u               /* 2 (0.3): set numbers are two bytes, hi lo (factory sets from 128) */
 
 int fc_ed_long(uint32_t cmd) { return cmd == FC_ED_SET_PUT || cmd == FC_ED_GLOB_PUT; }
 
@@ -46,20 +46,22 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
         put(FC_ED_PROTO);
         put(FC_NFACTORY);
         put(FC_NUSER);
-        put(fc_g.cur_set);
+        put(fc_g.cur_set >> 7);
+        put(fc_g.cur_set & 0x7Fu);
         put(fc_dirty);
         return 1;
     }
     case FC_ED_SET_GET:
-        if (na < 1u)
+        if (na < 2u)
             return 0;
-        s = a[0];
-        put(s);
+        s = (uint32_t)a[0] << 7 | a[1];
+        put(a[0]);
+        put(a[1]);
         if (s == FC_ED_WORKING)
             t = fc_set;
-        else if (s >= 64u && s - 64u < FC_NFACTORY)
+        else if (s >= FC_FACTORY0 && s - FC_FACTORY0 < FC_NFACTORY)
             for (i = 0; i < FC_SET_BYTES; i++)
-                ((uint8_t *)&t)[i] = FC_FACTORY[s - 64u][i];
+                ((uint8_t *)&t)[i] = FC_FACTORY[s - FC_FACTORY0][i];
         else if (s >= FC_NUSER || fc_user_load(s, &t)) {
             put(0);
             return 1;
@@ -68,11 +70,12 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
         fc_ed_pack(put, (const uint8_t *)&t, FC_SET_BYTES);
         return 1;
     case FC_ED_SET_PUT:
-        if (na < 1u)
+        if (na < 2u)
             return 0;
-        s = a[0];
-        put(s);
-        if (fc_ed_unpack(a + 1, na - 1u, (uint8_t *)&t, FC_SET_BYTES) != FC_SET_BYTES) {
+        s = (uint32_t)a[0] << 7 | a[1];
+        put(a[0]);
+        put(a[1]);
+        if (fc_ed_unpack(a + 2, na - 2u, (uint8_t *)&t, FC_SET_BYTES) != FC_SET_BYTES) {
             put(1);
             return 1;
         }
@@ -113,10 +116,11 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
         }
         return 1;
     case FC_ED_SELECT:
-        if (na < 1u)
+        if (na < 2u)
             return 0;
         put(a[0]);
-        if (fc_load_set(a[0])) {
+        put(a[1]);
+        if (fc_load_set((uint32_t)a[0] << 7 | a[1])) {
             put(1);
             return 1;
         }

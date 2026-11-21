@@ -5,7 +5,9 @@
 import { encodeSet, decodeSet, pack7, unpack7, SET_BYTES } from "./setcodec.js";
 
 export const CMD = { INFO: 40, SET_GET: 41, SET_PUT: 42, NAMES: 43, SELECT: 44, KEY: 45, GLOBALS_GET: 46, GLOBALS_PUT: 47 };
-export const WORKING = 127, FACTORY0 = 64, NUSER = 20;
+export const WORKING = 127, FACTORY0 = 128, NUSER = 20;
+// protocol 2 (0.3): set numbers are two 7-bit bytes, hi lo
+const slot2 = (s) => [(s >> 7) & 0x7f, s & 0x7f];
 const HDR = [0xf0, 0x7d, 0x46, 0x4c];
 export const FM1_PORT = /fm-?1|fm1-chord|felucca|sloop|dreadnought|x0x/i;
 
@@ -66,17 +68,18 @@ export class Device {
     let i = 0, name = "";
     while (i < b.length && b[i]) name += String.fromCharCode(b[i++]);
     i++;
-    return { name, proto: b[i], nfactory: b[i + 1], nuser: b[i + 2], cur: b[i + 3], flags: b[i + 4] };
+    if (b[i] < 2) throw new Error("This FM-1 has an older FM1-Chord: install the newest one with the flasher.");
+    return { name, proto: b[i], nfactory: b[i + 1], nuser: b[i + 2], cur: (b[i + 3] << 7) | b[i + 4], flags: b[i + 5] };
   }
   async getSet(slot) {
-    const b = await this.send(CMD.SET_GET, [slot]);
-    if (b[0] !== slot || !b[1]) return null;
-    return decodeSet(unpack7(b.slice(2), SET_BYTES));
+    const b = await this.send(CMD.SET_GET, slot2(slot));
+    if (((b[0] << 7) | b[1]) !== slot || !b[2]) return null;
+    return decodeSet(unpack7(b.slice(3), SET_BYTES));
   }
   async putSet(slot, set) {
-    const b = await this.send(CMD.SET_PUT, [slot, ...pack7(encodeSet(set))], true, 6000);
-    if (b[0] !== slot || b[1] !== 0) throw new Error(["", "the FM-1 said the data was the wrong size", "the FM-1 refused the set",
-      "the FM-1 couldn't write its flash", "no such slot"][b[1]] || `error ${b[1]}`);
+    const b = await this.send(CMD.SET_PUT, [...slot2(slot), ...pack7(encodeSet(set))], true, 6000);
+    if (((b[0] << 7) | b[1]) !== slot || b[2] !== 0) throw new Error(["", "the FM-1 said the data was the wrong size", "the FM-1 refused the set",
+      "the FM-1 couldn't write its flash", "no such slot"][b[2]] || `error ${b[2]}`);
   }
   async names() {
     const b = await this.send(CMD.NAMES);
@@ -90,8 +93,8 @@ export class Device {
     return out;
   }
   async select(slot) {
-    const b = await this.send(CMD.SELECT, [slot]);
-    if (b[1] !== 0) throw new Error("the FM-1 has no set there");
+    const b = await this.send(CMD.SELECT, slot2(slot));
+    if (b[2] !== 0) throw new Error("the FM-1 has no set there");
   }
   key(k, vel) { return this.send(CMD.KEY, [k, vel], false); }
 }

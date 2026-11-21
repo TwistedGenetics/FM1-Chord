@@ -5,7 +5,8 @@ import { encodeSet, decodeSet, pack7, unpack7, SET_BYTES } from "./setcodec.js";
 
 export function mockFM1(factorySets, { name = "FM1-Chord FM-1", version = "0.1 DEMO" } = {}) {
   const user = Array.from({ length: 20 }, () => null);
-  let working = encodeSet(factorySets[0]), cur = 64;
+  let working = encodeSet(factorySets[0]), cur = 128;
+  const at = (a) => (a[0] << 7) | a[1];
   const input = { id: "mock-in", name, manufacturer: "M-VAVE", state: "connected", type: "input", onmidimessage: null };
   const reply = (cmd, body) => {
     const d = Uint8Array.from([0xf0, 0x7d, 0x46, 0x4c, cmd, ...body.map((x) => x & 0x7f), 0xf7]);
@@ -16,21 +17,21 @@ export function mockFM1(factorySets, { name = "FM1-Chord FM-1", version = "0.1 D
     if (d[0] !== 0xf0 || d[1] !== 0x7d || d[2] !== 0x46 || d[3] !== 0x4c) return;
     const cmd = d[4], a = Array.from(d.slice(5, d.length - 1));
     switch (cmd) {
-      case 40: reply(cmd, [...str(`FM1-Chord ${version}`, 24).filter((x) => x), 0, 1, factorySets.length, 20, cur, 0]); break;
+      case 40: reply(cmd, [...str(`FM1-Chord ${version}`, 24).filter((x) => x), 0, 2, factorySets.length, 20, cur >> 7, cur & 127, 0]); break;
       case 41: {
-        const s = a[0];
-        const b = s === 127 ? working : s >= 64 ? (factorySets[s - 64] ? encodeSet(factorySets[s - 64]) : null) : user[s];
-        reply(cmd, b ? [s, 1, ...pack7(b)] : [s, 0]);
+        const s = at(a), h = [a[0], a[1]];
+        const b = s === 127 ? working : s >= 128 ? (factorySets[s - 128] ? encodeSet(factorySets[s - 128]) : null) : user[s];
+        reply(cmd, b ? [...h, 1, ...pack7(b)] : [...h, 0]);
         break;
       }
       case 42: {
-        const s = a[0], b = unpack7(a.slice(1), SET_BYTES);
-        if (b.length !== SET_BYTES) { reply(cmd, [s, 1]); break; }
-        if (!decodeSet(b)) { reply(cmd, [s, 2]); break; }
+        const s = at(a), h = [a[0], a[1]], b = unpack7(a.slice(2), SET_BYTES);
+        if (b.length !== SET_BYTES) { reply(cmd, [...h, 1]); break; }
+        if (!decodeSet(b)) { reply(cmd, [...h, 2]); break; }
         if (s === 127) working = b;
         else if (s < 20) { user[s] = b; if (cur === s) working = b; }
-        else { reply(cmd, [s, 4]); break; }
-        reply(cmd, [s, 0]);
+        else { reply(cmd, [...h, 4]); break; }
+        reply(cmd, [...h, 0]);
         break;
       }
       case 43: {
@@ -43,10 +44,10 @@ export function mockFM1(factorySets, { name = "FM1-Chord FM-1", version = "0.1 D
         break;
       }
       case 44: {
-        const s = a[0];
-        const b = s >= 64 ? (factorySets[s - 64] ? encodeSet(factorySets[s - 64]) : null) : user[s];
+        const s = at(a);
+        const b = s >= 128 ? (factorySets[s - 128] ? encodeSet(factorySets[s - 128]) : null) : user[s];
         if (b) { working = b; cur = s; }
-        reply(cmd, [s, b ? 0 : 1]);
+        reply(cmd, [a[0], a[1], b ? 0 : 1]);
         break;
       }
       default: break;                                // KEY and unknown: no reply

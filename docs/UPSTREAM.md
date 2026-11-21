@@ -23,6 +23,7 @@ update loader, the package maker and the build checks.
 | Web flasher (`web/flasher/`), its update-protocol modules (`vendor/`) | DREADNOUGHT's flasher; SLOOP / Felucca `fm1ota.js`, `fm1pkg.js` | SLOOP v2.8.1 | GPL-3.0-only |
 | iPad app (`ios/`) | DREADNOUGHT's iPad wrapper | DREADNOUGHT 0.44 | GPL-3.0-only |
 | Pages site and workflows (`tools/make_site.py`, `.github/workflows/`) | DREADNOUGHT | | GPL-3.0-only |
+| J6 factory sets' chords (`tools/j6_chord_sets.txt`) | the Roland J-6 Owner's Manual (v1.02), "Chord Set List": the chord sets' names and notes, as facts, for compatibility | | (data) |
 | Big font (generated) | Barlow Semi Condensed Bold, in X0X's `assets/fonts` | | SIL OFL 1.1 |
 | SVF filter, polyBLEP, Freeverb structure | the published methods (Simper's trapezoidal SVF; Välimäki's polyBLEP; Jezar's Freeverb, public domain), written again here | | GPL-3.0-only |
 

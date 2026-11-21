@@ -9,6 +9,7 @@
 #define FC_SET_VERSION 1u
 #define FC_SET_BYTES 336u
 #define FC_NUSER 20u                /* user sets on the FM-1: 10 in OBJ_PAT0, 10 in OBJ_PAT1 */
+#define FC_FACTORY0 128u            /* set numbers: 0..19 user sets, 128 + n factory set n (to 254) */
 
 /* the synth voice (src/dsp/fc_synth.c): 24 bytes, all 0..127 unless noted */
 typedef struct {
@@ -69,7 +70,7 @@ enum { FC_SC_MAJOR, FC_SC_MINOR, FC_SC_DORIAN, FC_SC_PHRYGIAN, FC_SC_LYDIAN, FC_
 typedef struct {
     char magic[2];                  /* 'F' 'G' */
     uint8_t version;
-    uint8_t cur_set;                /* 0..19 a user set, 64 + n factory set n */
+    uint8_t cur_set;                /* 0..19 a user set, FC_FACTORY0 + n factory set n (64 + n in version 1) */
     uint8_t midi_ch;                /* out, 0..15 */
     uint8_t output;                 /* 0 synth + MIDI, 1 synth only, 2 MIDI only */
     uint8_t clock;                  /* 0 internal, 1 MIDI clock in */

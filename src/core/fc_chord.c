@@ -27,10 +27,18 @@ static const uint8_t FC_IV[FC_NQ_NAMED][7] = {
     {0, 3, 6, 9},               /* dim7 */
     {0, 4, 7, 11, 14},          /* maj9 */
     {0, 5, 7, 10},              /* 7sus4 */
+    {0, 4, 7, 10, 15},          /* 7#9 (0.3) */
+    {0, 4, 7, 10, 13},          /* 7b9 */
+    {0, 4, 8, 10},              /* 7#5 (aug7) */
+    {0, 3, 7, 11},              /* m(maj7) */
+    {0, 4, 7, 11, 18},          /* maj7#11 */
+    {0, 4, 7, 10, 18},          /* 7#11 */
+    {0, 3, 7, 10, 14, 21},      /* m13 (the 11th left out) */
+    {0, 4, 7, 9, 14},           /* 6/9 */
 };
 static const char *const FC_SUFFIX[FC_NQ_NAMED] = {
     "", "m", "7", "maj7", "m7", "9", "m9", "11", "13", "sus2", "sus4", "dim", "aug", "add9", "6", "m6", "5",
-    "m11", "m7b5", "dim7", "maj9", "7sus4",
+    "m11", "m7b5", "dim7", "maj9", "7sus4", "7#9", "7b9", "7#5", "mmaj7", "maj7#11", "7#11", "m13", "69",
 };
 static const char *const FC_NOTE[12] = {"C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 static const char *const FC_VOICING[FC_NV] = {"CLOSE", "OPEN", "DROP 2", "DROP 3", "SPREAD"};
@@ -69,8 +77,9 @@ uint32_t fc_tones(const fc_chord_t *c, uint8_t *iv)
 {
     uint32_t n = 0, i;
     if (c->quality == FC_Q_CUSTOM) {
-        uint32_t m = (uint32_t)c->custom[0] | (uint32_t)c->custom[1] << 8 | (uint32_t)c->custom[2] << 16;
-        for (i = 0; i < 24u && n < FC_MAXN - 1u; i++)
+        uint32_t m = (uint32_t)c->custom[0] | (uint32_t)c->custom[1] << 8 | (uint32_t)c->custom[2] << 16 |
+                     (uint32_t)c->custom_hi << 24;
+        for (i = 0; i < 32u && n < FC_MAXN - 1u; i++)
             if (m & (1u << i))
                 iv[n++] = (uint8_t)i;
         return n;
@@ -254,22 +263,97 @@ void fc_voice_lead(const uint8_t *prev, uint32_t np, int32_t prev_bass, uint8_t 
     }
 }
 
+static uint32_t put_str(char *buf, uint32_t k, uint32_t n, const char *p)
+{
+    for (; *p && k < n - 1u; p++)
+        buf[k++] = *p;
+    return k;
+}
+
+static uint32_t pc_mask(const uint8_t *iv, uint32_t n, uint32_t root);
+
+/* The named chord the notes come nearest (for naming exact-note chords): every note one of its tones, the fewest of
+ * its tones missing, a missing 5th (or the 9th / 11th of a chord of five or more) counting least (1, any other 2; at
+ * most 2); the lowest note's pitch first as
+ * the root, then upwards; the earlier quality on a tie. 0 if none. nt ascending. */
+static int guess(const uint8_t *nt, uint32_t n, uint32_t *root, uint32_t *q)
+{
+    uint8_t iv[FC_MAXN];
+    uint32_t have = 0, i, k, qq, best = 3, low = nt[0] % 12u;
+    for (i = 0; i < n; i++)
+        have |= 1u << (nt[i] % 12u);
+    for (k = 0; k < 12u; k++) {
+        uint32_t r = (low + k) % 12u;
+        if (!(have & (1u << r)))
+            continue;
+        for (qq = 0; qq < FC_NQ_NAMED; qq++) {
+            fc_chord_t t;
+            uint32_t nt2, qm, miss, cost = 0, b;
+            t.quality = (uint8_t)qq;
+            nt2 = fc_tones(&t, iv);
+            qm = pc_mask(iv, nt2, r);
+            if (have & ~qm)
+                continue;
+            miss = qm & ~have;
+            for (b = 0; b < 12u; b++)                /* a missing 5th, or 9th / 11th of a big chord, costs least */
+                if (miss & (1u << b)) {
+                    uint32_t d = (b + 12u - r) % 12u;
+                    cost += d == 7u || (nt2 >= 5u && (d == 2u || d == 5u)) ? 1u : 2u;
+                }
+            if (cost < best) {
+                best = cost;
+                *root = r;
+                *q = qq;
+            }
+        }
+    }
+    return best <= 2u;
+}
+
+/* A custom chord (exact notes: LEARN, the J6 sets) is named from its notes: the chord they make (or nearly: a 5th or
+ * one other tone left out), then the lowest note as a slash bass if it isn't the root ("Cadd9/E"); failing that, the
+ * notes above the lowest as a chord over it; failing that, the root and "*". All one pitch (octaves): the note. */
+static void custom_name(const fc_chord_t *c, uint32_t *root, uint32_t *q, uint32_t *bass)
+{
+    uint8_t nt[FC_MAXN];
+    uint32_t nn = fc_chord_notes(c, 0, nt), i, same = 1;
+    *root = c->root % 12u;
+    *q = FC_Q_CUSTOM;
+    *bass = FC_NOBASS;
+    if (!nn)
+        return;
+    for (i = 1; i < nn; i++)
+        if (nt[i] % 12u != nt[0] % 12u)
+            same = 0;
+    if (same) {
+        *root = nt[0] % 12u;
+        *q = FC_EMPTY;                           /* (marks "just the note") */
+        return;
+    }
+    if (!guess(nt, nn, root, q) && !(nn > 2u && guess(nt + 1, nn - 1u, root, q))) {
+        *root = c->root % 12u;
+        *q = FC_Q_CUSTOM;
+        return;
+    }
+    if (nt[0] % 12u != *root)
+        *bass = nt[0] % 12u;
+}
+
 void fc_chord_name(const fc_chord_t *c, char *buf, uint32_t n)
 {
-    const char *p;
-    uint32_t k = 0;
+    uint32_t k = 0, root = c->root % 12u, q = c->quality, bass = c->bass;
     buf[0] = 0;
     if (c->quality == FC_EMPTY || n < 16u)
         return;
-    for (p = FC_NOTE[c->root % 12u]; *p && k < n - 1u; p++)
-        buf[k++] = *p;
-    for (p = fc_quality_name(c->quality); *p && k < n - 1u; p++)
-        buf[k++] = *p;
-    if (c->bass < 12u && c->bass != c->root % 12u) {
+    if (q == FC_Q_CUSTOM)
+        custom_name(c, &root, &q, &bass);
+    k = put_str(buf, k, n, FC_NOTE[root]);
+    if (q != FC_EMPTY)
+        k = put_str(buf, k, n, fc_quality_name(q));
+    if (bass < 12u && bass != root) {
         if (k < n - 1u)
             buf[k++] = '/';
-        for (p = FC_NOTE[c->bass]; *p && k < n - 1u; p++)
-            buf[k++] = *p;
+        k = put_str(buf, k, n, FC_NOTE[bass]);
     }
     buf[k] = 0;
 }
@@ -304,7 +388,7 @@ static void place(fc_chord_t *c, uint32_t low)
 
 int fc_chord_identify(const uint8_t *notes, uint32_t n, fc_chord_t *c)
 {
-    uint8_t s[16], iv[FC_MAXN];
+    uint8_t s[16] = {0}, iv[FC_MAXN];
     uint32_t i, q, r, k, low, have = 0, m = 0;
     if (!n)
         return 0;
@@ -316,10 +400,9 @@ int fc_chord_identify(const uint8_t *notes, uint32_t n, fc_chord_t *c)
     low = s[0];
     for (i = 0; i < n; i++)
         have |= 1u << (s[i] % 12u);
-    c->custom[0] = c->custom[1] = c->custom[2] = 0;
+    c->custom[0] = c->custom[1] = c->custom[2] = c->custom_hi = 0;
     c->voicing = FC_V_CLOSE;
     c->bass = FC_NOBASS;
-    c->reserved = 0;
     for (k = 0; k < 12u; k++) {                     /* roots: the lowest note first, then up from it */
         r = (low + k) % 12u;
         if (!(have & (1u << r)))
@@ -349,13 +432,14 @@ int fc_chord_identify(const uint8_t *notes, uint32_t n, fc_chord_t *c)
         }
     }
     for (i = 0; i < n; i++)                         /* not a named chord: the notes as they are */
-        if (s[i] - low < 24u)
+        if (s[i] - low < 32u)
             m |= 1u << (s[i] - low);
     c->root = (uint8_t)(low % 12u);
     c->quality = FC_Q_CUSTOM;
     c->custom[0] = (uint8_t)m;
     c->custom[1] = (uint8_t)(m >> 8);
     c->custom[2] = (uint8_t)(m >> 16);
+    c->custom_hi = (uint8_t)(m >> 24);
     c->inversion = 0;
     place(c, low);
     return 1;

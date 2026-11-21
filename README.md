@@ -18,8 +18,8 @@ editor (also an iPad app) that suggests what to play next.
 ## What it does
 
 **On the FM-1** ([docs/MANUAL.md](docs/MANUAL.md)): each key plays its chord on the built-in synth and / or MIDI out;
-OCT− / OCT+ move the whole set; per key: root, 22 chord types (maj, m, 7, maj7, m7, 9, m9, 11, 13, sus2, sus4, dim,
-aug, add9, 6, m6, 5, m11, m7b5, dim7, maj9, 7sus4) or custom notes, inversion, voicing (close, open, drop 2, drop 3,
+OCT− / OCT+ move the whole set; per key: root, 30 chord types (maj, m, 7, maj7, m7, 9, m9, 11, 13, sus2, sus4, dim,
+aug, add9, 6, m6, 5, m11, m7b5, dim7, maj9, 7sus4, 7#9, 7b9, 7#5, m(maj7), maj7#11, 7#11, m13, 6/9) or exact notes, inversion, voicing (close, open, drop 2, drop 3,
 spread), slash bass and octave; LEARN captures a chord from notes you play; strum, an arpeggiator (internal tempo or
 MIDI clock), latch, auto voice leading, velocity humanise, transpose. The screen is light with big type: the chord's
 name, its inversion and voicing, the octave.
@@ -29,7 +29,9 @@ name, its inversion and voicing, the octave.
 from: warm pad, dark pad, liquid keys, neuro stab, rave stab, garage organ, glass keys, strings, void pad, dub chord,
 bell stab.
 
-**Factory sets (18):** DARK JUNGLE MIN, LIQUID DNB, NEURO STABS, DEEP GARAGE, 90S RAVE STABS, and thirteen in F built
+**Factory sets (118):** the **Roland J-6's 100 chord sets**, as **J6 01 POP** to **J6 100 MODERN** (the J-6 manual's
+chord set list, its voicings kept note for note, each FM-1 key playing the J-6 chord of the same note name); and
+DARK JUNGLE MIN, LIQUID DNB, NEURO STABS, DEEP GARAGE, 90S RAVE STABS, and thirteen in F built
 on Phrygian progressions: F PHRYGIAN DARK, HALFSTEP DREAD, FM ANDALUSIAN, F PHRYG DOMINANT, DUB PHRYGIAN, LIQUID
 PHRYGIAN, NEURO PHRYGIAN, HORROR PHRYGIAN, GARAGE PHRYGIAN, PHRYGIAN ARPS, PHRYGIAN STRUMS, RAVE PHRYGIAN, PHRYGIAN
 SPACE. In those, each key plays the chord on its own note where F Phrygian has one (F: Fm, F#: Gb, G#: Ab, A#: Bbm,

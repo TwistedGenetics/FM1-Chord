@@ -119,16 +119,16 @@ static int fc_user_save(uint32_t slot, const fc_set_t *s)
 }
 static void fc_globals_save(void) { (void)plat_store_save(OBJ_SOUND, &fc_g, sizeof fc_g); }
 
-/* the set the keys play from now: 0..19 a user set, 64 + n factory set n; 0 = done */
+/* the set the keys play from now: 0..19 a user set, FC_FACTORY0 + n factory set n; 0 = done */
 static int fc_load_set(uint32_t idx)
 {
     static fc_set_t t;
     uint32_t i;
-    if (idx >= 64u) {
-        if (idx - 64u >= FC_NFACTORY)
+    if (idx >= FC_FACTORY0) {
+        if (idx - FC_FACTORY0 >= FC_NFACTORY)
             return -1;
         for (i = 0; i < FC_SET_BYTES; i++)
-            ((uint8_t *)&t)[i] = FC_FACTORY[idx - 64u][i];
+            ((uint8_t *)&t)[i] = FC_FACTORY[idx - FC_FACTORY0][i];
         if (fc_set_check(&t))
             return -1;
     } else if (fc_user_load(idx, &t))
@@ -149,7 +149,7 @@ static uint32_t fc_step_set(uint32_t idx, int32_t d)
 {
     uint32_t order[FC_NFACTORY + FC_NUSER], n = 0, i, at = 0;
     for (i = 0; i < FC_NFACTORY; i++)
-        order[n++] = 64u + i;
+        order[n++] = FC_FACTORY0 + i;
     for (i = 0; i < FC_NUSER; i++)
         if (fc_user_used(i))
             order[n++] = i;
@@ -179,7 +179,8 @@ static const char *const FC_P_LABEL[] = {
     "SOUND", "CUTOFF", "RESO", "F.ENV", "ATTACK", "DECAY", "SUSTAIN", "RELEASE", "CHORUS", "REVERB", "SIZE", "LEVEL",
     "MODE", "STRUM", "DIR", "HUMAN", "RATE", "DIR", "OCTAVES", "GATE", "MIDI CH", "OUTPUT", "CLOCK", "VELO", "SLOT"};
 static const char *const FC_QMENU[FC_NQ_NAMED] = {"MAJ", "MIN", "7", "MAJ7", "MIN7", "9", "MIN9", "11", "13", "SUS2",
-    "SUS4", "DIM", "AUG", "ADD9", "6", "MIN6", "5", "MIN11", "M7B5", "DIM7", "MAJ9", "7SUS4"};
+    "SUS4", "DIM", "AUG", "ADD9", "6", "MIN6", "5", "MIN11", "M7B5", "DIM7", "MAJ9", "7SUS4", "7#9", "7B9", "7#5", "MMAJ7",
+    "MAJ7#11", "7#11", "MIN13", "6/9"};
 static const char *const FC_RATE_S[FC_NRATE] = {"1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32"};
 
 static fc_chord_t *fc_cur(void) { return &fc_set.ch[fc_sel % FC_NKEYS]; }
@@ -217,9 +218,9 @@ static void fc_ptext(uint32_t p, char *b)
     b[0] = 0;
     switch (p) {
     case P_SET:
-        if (fc_g.cur_set >= 64u) {
+        if (fc_g.cur_set >= FC_FACTORY0) {
             fc_cpy(b, "F");
-            fc_num(b + 1, fc_g.cur_set - 63, 0);
+            fc_num(b + 1, (int32_t)fc_g.cur_set - (int32_t)FC_FACTORY0 + 1, 0);
         } else {
             fc_cpy(b, "U");
             fc_num(b + 1, fc_g.cur_set + 1, 0);
@@ -313,7 +314,7 @@ static void fc_pturn(uint32_t p, int32_t d)
     case P_ROOT: c->root = (uint8_t)(((int32_t)c->root + d) % 12 + 12) % 12; chord = 1; break;
     case P_QUAL: {
         int32_t q = c->quality == FC_Q_CUSTOM ? (int32_t)FC_NQ_NAMED : c->quality;
-        q = lim32(q + d, 0, (int32_t)FC_NQ_NAMED - (c->custom[0] | c->custom[1] | c->custom[2] ? 0 : 1));
+        q = lim32(q + d, 0, (int32_t)FC_NQ_NAMED - (c->custom[0] | c->custom[1] | c->custom[2] | c->custom_hi ? 0 : 1));
         c->quality = (uint8_t)(q == (int32_t)FC_NQ_NAMED ? FC_Q_CUSTOM : (uint32_t)q);
         chord = 1;
         break;
@@ -467,7 +468,7 @@ static void fc_button(uint32_t b)
     case B_SAVE:
         if (fc_page != PG_SAVE) {
             fc_save_slot = fc_g.cur_set < FC_NUSER ? fc_g.cur_set : 0u;
-            if (fc_g.cur_set >= 64u) {           /* from a factory set: the first empty slot */
+            if (fc_g.cur_set >= FC_FACTORY0) {   /* from a factory set: the first empty slot */
                 uint32_t i;
                 for (i = 0; i < FC_NUSER; i++)
                     if (!fc_user_used(i)) {
@@ -803,7 +804,7 @@ void fc_app_init(void)
     fc_player_init(&fc_pl, &out);
     if (plat_store_load(OBJ_SOUND, &fc_g, sizeof fc_g) != (int)sizeof fc_g || fc_globals_check(&fc_g))
         fc_globals_init(&fc_g);
-    if (fc_load_set(fc_g.cur_set) && fc_load_set(64u)) {
+    if (fc_load_set(fc_g.cur_set) && fc_load_set(FC_FACTORY0)) {
         fc_set_init(&fc_set, "EMPTY");           /* (only if the factory content were broken) */
         fc_synth_sound(&fc_syn, &fc_set.sound);
     }

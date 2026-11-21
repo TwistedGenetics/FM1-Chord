@@ -1,6 +1,6 @@
 # FM1-Chord: the panel end to end on the simulated FM-1
 wait 300
-expect set 64
+expect set 128
 expect page 0
 shot boot.ppm
 wav basic.wav
@@ -71,9 +71,9 @@ expect sel 3
 expect quality 0
 # PRESET: the next set (user 1 is the last; round to the first factory set)
 turn PRESET 1
-expect set 64
+expect set 128
 turn PRESET 2
-expect set 66
+expect set 130
 shot neuro.ppm
 turn PRESET -2
 # strum, then the arpeggiator
@@ -121,19 +121,19 @@ expect key -1
 sysex 28
 expect reply.0 70
 expect replylen >15
-sysex 29 7F
-expect reply.0 127
-expect reply.1 1
-expect replylen 386
+sysex 29 00 7F
+expect reply.1 127
+expect reply.2 1
+expect replylen 387
 sysex 2B
 expect reply.0 20
 expect reply.1 1
 expect replylen 341
-sysex 2C 43
-expect reply.1 0
-expect set 67
-sysex 2C 13
-expect reply.1 1
+sysex 2C 01 03
+expect reply.2 0
+expect set 131
+sysex 2C 00 13
+expect reply.2 1
 tap PLAY
 wait 2000
 wavstop

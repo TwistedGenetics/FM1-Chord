@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3
+
+- **The Roland J-6's 100 chord sets** as factory sets **J6 01 POP … J6 100 MODERN** (named after the manual's
+  chord set list, with its numbers). The J-6's 12 chords sit on the FM-1's keys by note name (C4–B4 at the J-6's
+  pitch, F3–B3 an octave down, C5–G5 an octave up) and keep its voicings note for note; voice leading is off in them.
+  Four chords that spanned more than 31 semitones have their lowest note an octave higher. Data:
+  `tools/j6_chord_sets.txt`, built by `tools/gen_j6_sets.mjs`.
+- 118 factory sets: set numbers on the wire are now two bytes (editor protocol 2; factory sets from 128). The editor
+  needs this firmware and this firmware needs this editor; saved settings carry over.
+- Eight more chord types: 7#9, 7b9, 7#5, m(maj7), maj7#11, 7#11, m13, 6/9.
+- Exact-note (custom) chords hold up to 31 semitones and are named from their notes ("Cadd9/E", "G13"), on the FM-1
+  and in the editor alike.
+
 ## 0.2
 
 - Thirteen new factory sets in F built on Phrygian progressions (i → bII, the half-step dread, Andalusian, Phrygian

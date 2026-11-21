@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # the order of src/core/fc_chord.h's FC_Q_* (the storage format)
 QUALITIES = ["", "m", "7", "maj7", "m7", "9", "m9", "11", "13", "sus2", "sus4", "dim", "aug", "add9", "6", "m6", "5",
-             "m11", "m7b5", "dim7", "maj9", "7sus4"]
+             "m11", "m7b5", "dim7", "maj9", "7sus4", "7#9", "7b9", "7#5", "mmaj7", "maj7#11", "7#11", "m13", "69"]
 ALIASES = {"maj": "", "min": "m", "M7": "maj7", "-": "m", "-7": "m7", "ø": "m7b5", "o": "dim", "o7": "dim7",
-           "+": "aug", "6/9": "6", "sus": "sus4", "power": "5"}
+           "+": "aug", "6/9": "69", "sus": "sus4", "power": "5", "aug7": "7#5", "m(maj7)": "mmaj7"}
 VOICINGS = ["close", "open", "drop2", "drop3", "spread"]
 WAVES = ["saw", "square", "tri", "sine", "organ", "pulse"]
 SCALES = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian", "locrian", "harmonic minor", "melodic minor"]
@@ -49,6 +49,22 @@ def parse_chord(text):
     root, k = pitch(sym)
     tail = sym[k:]
     bass = NOBASS
+    m = re.fullmatch(r"\*([0-9.]+)(?:/(.+))?", tail)       # custom notes: "C*0.3.7.14"
+    if m:
+        mask = 0
+        for x in m[1].split("."):
+            v = int(x)
+            if not 0 <= v < 32:
+                raise ValueError(f"bad custom note in {text!r}")
+            mask |= 1 << v
+        c = {"root": root, "quality": 31, "custom": mask, "inversion": 0, "voicing": 0,
+             "bass": pitch(m[2])[0] if m[2] else NOBASS, "octave": 0}
+        for w in rest:
+            if re.fullmatch(r"[+-][0-2]", w):
+                c["octave"] = int(w)
+            else:
+                raise ValueError(f"unknown word {w!r} in {text!r}")
+        return c
     if "/" in tail:
         tail, b = tail.rsplit("/", 1)
         bass, kb = pitch(b)
@@ -102,7 +118,9 @@ def set_bytes(st, sounds):
         if c is None:
             b += [0, EMPTY, 0, 0, 0, 0, 0, NOBASS, 0, 0]
         else:
-            b += [c["root"], c["quality"], 0, 0, 0, c["inversion"], c["voicing"], c["bass"], c["octave"] & 0xFF, 0]
+            cm = c.get("custom", 0)
+            b += [c["root"], c["quality"], cm & 0xFF, (cm >> 8) & 0xFF, (cm >> 16) & 0xFF, c["inversion"], c["voicing"],
+                  c["bass"], c["octave"] & 0xFF, (cm >> 24) & 0xFF]
     b += [0, 0]
     assert len(b) == 336, len(b)
     return bytes(b)
