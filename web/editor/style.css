@@ -114,9 +114,9 @@ main { padding: 12px 16px 24px; max-width: 1500px; margin: 0 auto; }
 .field { margin: 6px 0 10px; }
 .field > label { display: block; font-weight: 700; margin-bottom: 6px; }
 /* sliders: big thumbs, the value beside */
-.ctl { display: grid; grid-template-columns: 9em 1fr 3.5em; gap: 12px; align-items: center; min-height: var(--tap); }
+.ctl { display: grid; grid-template-columns: 9em 1fr 4.6em; gap: 12px; align-items: center; min-height: var(--tap); }
 .ctl label { font-weight: 700; }
-.ctl output { font-weight: 800; font-size: 20px; text-align: right; }
+.ctl output { font-weight: 800; font-size: 20px; text-align: right; white-space: nowrap; }
 input[type="range"] { width: 100%; height: 44px; accent-color: var(--sel); }
 input[type="range"]::-webkit-slider-thumb { width: 34px; height: 34px; }
 
@@ -196,3 +196,14 @@ dialog#imp::backdrop { background: rgba(246, 244, 239, .82); }
 .implist li { border: 2px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 19px; }
 .implist li > div { margin-top: 4px; font-weight: 600; word-spacing: 4px; }
 .implist .bad { color: var(--r-ink); background: var(--r-bg); border-radius: 8px; padding: 2px 8px; display: inline-block; }
+/* sound part 2 (0.6): macros, the mod matrix */
+.macros .ctl { grid-template-columns: 11em 1fr 3.5em; }
+.macros .ctl label { font-size: 19px; }
+.matrix { display: flex; flex-direction: column; gap: 10px; }
+.mrow { display: grid; grid-template-columns: 2em minmax(9em, 13em) auto minmax(9em, 13em) 1fr; gap: 10px; align-items: center;
+  border: 2px solid var(--line); border-radius: 12px; padding: 6px 12px; background: var(--panel); }
+.mrow .mnum { font-weight: 800; font-size: 22px; text-align: center; }
+.mrow .marrow { font-weight: 700; color: var(--soft, #444); }
+.mrow .ctl { grid-template-columns: 2em 1fr 4.2em; }
+.seg.small button { min-width: 0; padding-left: 10px; padding-right: 10px; }
+@media (max-width: 760px) { .mrow { grid-template-columns: 2em 1fr; } .mrow .marrow { display: none; } .mrow .ctl { grid-column: 1 / -1; } }

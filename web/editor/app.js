@@ -7,6 +7,7 @@ import {
 } from "./chord.js";
 import {
   loadPresets, newSet, cloneSet, encodeSet, setToFile, setFromFile, WAVES, MODES, RATES, STRUM_DIRS, ARP_DIRS,
+  ensureSx, DIVS, DIV_BEATS, DLY_MAX,
 } from "./setcodec.js";
 import { suggest, suggestNext, fillSet, expandSet, detectKey, roman, keyLabel, SCALE_LABELS, TIERS } from "./harmony.js";
 import { readChordText } from "./chordtext.js";
@@ -35,6 +36,7 @@ let mock = null, access = null;
 // ------------------------------------------------------------------------------------------------ library ---
 function loadMine() {
   try { st.mine = JSON.parse(localStorage.getItem(LS) || "[]"); } catch { st.mine = []; }
+  st.mine.forEach(ensureSx);                       // saved before 0.6: no sound part 2
 }
 function saveMine() {
   try { localStorage.setItem(LS, JSON.stringify(st.mine)); } catch (e) { toast("Couldn't save in this browser: " + e.message); }
@@ -504,8 +506,88 @@ function pasteDialog() {
 
 // ---- sound ----
 const WAVE_LABELS = ["Saw", "Square", "Triangle", "Sine", "Organ", "Pulse"];
+// the sound's part 2 (0.6): macros, filter mode and drive, LFOs, the mod envelope, the matrix, the delay
+const FMODE_LABELS = ["Low-pass", "Band-pass", "High-pass", "Notch"];
+const LWAVE_LABELS = ["Sine", "Triangle", "Saw", "Square", "Random (S&H)"];
+const MSRC_LABELS = ["—", "LFO 1", "LFO 2", "Mod envelope", "Velocity", "Key (pitch)", "Macro 1", "Macro 2", "Macro 3", "Macro 4"];
+const MDST_LABELS = ["—", "Pitch", "Cutoff", "Resonance", "Osc B level", "FM amount", "Pulse width", "Volume", "Detune",
+  "Sub level", "Drive", "Filter env amount", "LFO 1 speed", "Delay mix", "Reverb mix", "Chorus"];
+const DIV_LABELS = DIVS;
+function lfoRateText(x, i, v) {
+  if (x.lfo_sync[i]) return DIV_LABELS[14 - ((v * 15) >> 7)];
+  const hz = 0.03 * Math.pow(2, (v * 10) / 127);
+  return hz < 1 ? `${hz.toFixed(2)}Hz` : `${hz.toFixed(1)}Hz`;
+}
+function macroName(x, i) {                         // what the macro moves first: its label on the FM-1 too
+  const m = x.mod.find((q) => q.src === 6 + i && q.dst && q.amt);
+  return m ? MDST_LABELS[m.dst] : "not used";
+}
+function sx2Html(x, pct, time) {
+  const amt = (v) => (v > 0 ? "+" : "") + Math.round((v * 100) / 127) + "%";
+  return `
+    <h3>Macros <span class="hint">(K1–K4 on the FM-1's MACRO page: HOME twice)</span></h3>
+    <div class="cols macros">${x.macro.map((v, i) => slider(`mc${i}`, `Macro ${i + 1} · ${macroName(x, i)}`, v, 0, 127, pct)).join("")}</div>
+    <div class="cols">
+      <div><h3>Filter type</h3>
+        ${seg(FMODE_LABELS, x.flt_mode, "fmode")}
+        <div class="field"><label>Slope</label>${seg(["12 dB (smooth)", "24 dB (steep)"], x.flt_slope, "fslope")}</div>
+        ${slider("x-drive", "Drive", x.drive, 0, 127, pct)}
+      </div>
+      ${[0, 1].map((i) => `<div><h3>LFO ${i + 1}</h3>
+        ${seg(LWAVE_LABELS, x.lfo_wave[i], `lw${i}`)}
+        <div class="field"><label>Speed</label>${seg(["Free (Hz)", "To the tempo"], x.lfo_sync[i], `ls${i}`)}</div>
+        ${slider(`lr${i}`, "Rate", x.lfo_rate[i], 0, 127, (v) => lfoRateText(x, i, v))}
+      </div>`).join("")}
+      <div><h3>Mod envelope</h3>
+        ${slider("x-menv_a", "Attack", x.menv_a, 0, 127, time)}${slider("x-menv_d", "Decay", x.menv_d, 0, 127, time)}
+        ${slider("x-menv_s", "Sustain", x.menv_s, 0, 127, pct)}${slider("x-menv_r", "Release", x.menv_r, 0, 127, time)}
+      </div>
+      <div><h3>Delay</h3>
+        <div class="field"><label>Time</label>${seg(DIV_LABELS.slice(0, DLY_MAX + 1), x.dly_time, "dtime", "small")}</div>
+        ${slider("x-dly_mix", "Mix", x.dly_mix, 0, 127, (v) => (v ? pct(v) : "off"))}
+        ${slider("x-dly_fb", "Feedback", x.dly_fb, 0, 127, pct)}
+        ${slider("x-dly_tone", "Tone", x.dly_tone, 0, 127, (v) => { const hz = 500 * Math.pow(2, (v * 5) / 127); return hz < 1000 ? Math.round(hz) + " Hz" : (hz / 1000).toFixed(1) + "k"; })}
+        <div class="field"><label>Mode</label>${seg(["Stereo", "Ping-pong"], x.dly_mode, "dmode")}</div>
+      </div>
+    </div>
+    <h3>Modulation <span class="hint">(what moves what: six slots)</span></h3>
+    <div class="matrix">${x.mod.map((m, i) => `<div class="mrow">
+      <span class="mnum">${i + 1}</span>
+      <select id="ms${i}" aria-label="Slot ${i + 1} source">${MSRC_LABELS.map((t, j) => `<option value="${j}" ${j === m.src ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+      <span class="marrow">moves</span>
+      <select id="md${i}" aria-label="Slot ${i + 1} destination">${MDST_LABELS.map((t, j) => `<option value="${j}" ${j === m.dst ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+      ${slider(`ma${i}`, "by", m.amt, -127, 127, amt)}
+    </div>`).join("")}</div>`;
+}
+function bindSx2(p, x) {
+  const redo = () => { markDirty(); renderPanel(); audition(st.sel); };
+  const on = (sel, fn) => p.querySelectorAll(sel).forEach((b) => (b.onclick = () => fn(b)));
+  on("[data-fmode]", (b) => { x.flt_mode = +b.dataset.fmode; redo(); });
+  on("[data-fslope]", (b) => { x.flt_slope = +b.dataset.fslope; redo(); });
+  on("[data-dtime]", (b) => { x.dly_time = +b.dataset.dtime; redo(); });
+  on("[data-dmode]", (b) => { x.dly_mode = +b.dataset.dmode; redo(); });
+  for (const i of [0, 1]) {
+    on(`[data-lw${i}]`, (b) => { x.lfo_wave[i] = +b.dataset[`lw${i}`]; redo(); });
+    on(`[data-ls${i}]`, (b) => { x.lfo_sync[i] = +b.dataset[`ls${i}`]; redo(); });
+  }
+  bindSliders(p, "x-", x, () => {});
+  const arr = (id, get, set) => {
+    const r = p.querySelector(`#${id}`);
+    if (!r) return;
+    r.oninput = () => { set(+r.value); r.nextElementSibling.textContent = (FMT[id] || String)(+r.value); markDirty(); };
+    r.onchange = () => audition(st.sel, 500);
+  };
+  x.macro.forEach((v, i) => arr(`mc${i}`, () => x.macro[i], (n) => { x.macro[i] = n; }));
+  [0, 1].forEach((i) => arr(`lr${i}`, () => x.lfo_rate[i], (n) => { x.lfo_rate[i] = n; }));
+  x.mod.forEach((m, i) => {
+    arr(`ma${i}`, () => m.amt, (n) => { m.amt = n; });
+    p.querySelector(`#ms${i}`).onchange = (e) => { m.src = +e.target.value; if (m.src && !m.amt) m.amt = 40; redo(); };
+    p.querySelector(`#md${i}`).onchange = (e) => { m.dst = +e.target.value; if (m.dst && !m.amt) m.amt = 40; redo(); };
+  });
+}
+
 function panelSound(p) {
-  const o = st.set.sound;
+  const o = st.set.sound, x = ensureSx(st.set).sx;
   const pct = (v) => Math.round((v / 127) * 100);
   const time = (v) => { const s = 0.001 * Math.pow(2, (v * 13) / 127); return s < 1 ? `${Math.round(s * 1000)}ms` : `${s.toFixed(1)}s`; };
   p.innerHTML = `
@@ -541,8 +623,14 @@ function panelSound(p) {
       <div><h3>Output</h3>
         ${slider("s-level", "Level", o.level, 0, 127, pct)}${slider("s-vel_sens", "Velocity", o.vel_sens, 0, 127, pct)}
       </div>
-    </div>`;
-  p.querySelectorAll("[data-snd]").forEach((b) => (b.onclick = () => { st.set.sound = { ...st.sounds[+b.dataset.snd].sound }; markDirty(); renderPanel(); audition(st.sel); }));
+    </div>
+    ${sx2Html(x, pct, time)}`;
+  p.querySelectorAll("[data-snd]").forEach((b) => (b.onclick = () => {
+    const sn = st.sounds[+b.dataset.snd];
+    st.set.sound = { ...sn.sound }; st.set.sx = structuredClone(sn.sx);
+    markDirty(); renderPanel(); audition(st.sel);
+  }));
+  bindSx2(p, x);
   p.querySelectorAll("[data-wa]").forEach((b) => (b.onclick = () => { o.wave_a = +b.dataset.wa; markDirty(); renderPanel(); audition(st.sel); }));
   p.querySelectorAll("[data-wb]").forEach((b) => (b.onclick = () => { o.wave_b = +b.dataset.wb; markDirty(); renderPanel(); audition(st.sel); }));
   bindSliders(p, "s-", o, () => {});

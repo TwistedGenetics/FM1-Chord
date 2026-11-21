@@ -11,6 +11,28 @@ static void zero(void *p, uint32_t n)
 static uint8_t lim(uint8_t v, uint8_t lo, uint8_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int8_t lims(int8_t v, int8_t lo, int8_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 
+/* beat divisions: beats (quarter notes) long */
+const float FC_DIV_BEATS[FC_NDIV] = {0.125f, 1.f / 6.f, 0.25f, 1.f / 3.f, 0.375f, 0.5f, 2.f / 3.f, 0.75f, 1.f, 1.5f,
+                                     2.f, 4.f, 8.f, 16.f, 32.f};
+const char *const FC_DIV_NAME[FC_NDIV] = {"1/32", "1/16T", "1/16", "1/8T", "1/16D", "1/8", "1/4T", "1/8D", "1/4",
+                                          "1/4D", "1/2", "1 BAR", "2 BARS", "4 BARS", "8 BARS"};
+
+void fc_sound2_default(fc_sound2_t *x)
+{
+    zero(x, sizeof *x);
+    x->lfo_rate[0] = 64;                     /* about 1 Hz */
+    x->lfo_rate[1] = 40;
+    x->lfo_sync[1] = 0;
+    x->menv_a = 40;
+    x->menv_d = 80;
+    x->menv_s = 0;
+    x->menv_r = 70;
+    x->macro[0] = x->macro[1] = x->macro[2] = x->macro[3] = 64;
+    x->dly_time = FC_D_8D;
+    x->dly_fb = 50;
+    x->dly_tone = 80;
+}
+
 void fc_sound_default(fc_sound_t *s)         /* a warm pad: the editor's "WARM PAD" (web/editor/presets.json) */
 {
     zero(s, sizeof *s);
@@ -53,6 +75,7 @@ void fc_set_init(fc_set_t *s, const char *name)
     s->key_scale = FC_SC_MINOR;
     s->tempo = 120;
     fc_sound_default(&s->sound);
+    fc_sound2_default(&s->sx);
     s->play.mode = FC_M_CHORD;
     s->play.strum = 15;
     s->play.arp_rate = FC_R_16;
@@ -111,6 +134,35 @@ int fc_set_check(fc_set_t *s)
         if (c->bass != FC_NOBASS)
             c->bass %= 12u;
         c->octave = lims(c->octave, -2, 2);
+    }
+    if (s->version == 1u) {                   /* 0.1 .. 0.5: the sound had no part 2 */
+        fc_sound2_default(&s->sx);
+        s->version = FC_SET_VERSION;
+    }
+    {
+        fc_sound2_t *x = &s->sx;
+        uint8_t *b;
+        for (b = &x->drive; b <= &x->menv_r; b++)
+            *b = lim(*b, 0, 127);
+        x->flt_mode = lim(x->flt_mode, 0, FC_NFMODE - 1u);
+        x->flt_slope = lim(x->flt_slope, 0, 1);
+        for (i = 0; i < 2u; i++) {
+            x->lfo_wave[i] = lim(x->lfo_wave[i], 0, FC_NLWAVE - 1u);
+            x->lfo_sync[i] = x->lfo_sync[i] ? 1u : 0u;
+        }
+        for (i = 0; i < FC_NMOD; i++) {
+            fc_mod_t *m = &x->mod[i];
+            if (m->src >= FC_NMS || m->dst >= FC_NMD)
+                m->src = m->dst = 0;
+            m->amt = lims(m->amt, -127, 127);
+        }
+        for (i = 0; i < FC_NMACRO; i++)
+            x->macro[i] = lim(x->macro[i], 0, 127);
+        x->dly_time = lim(x->dly_time, 0, FC_D_1);
+        x->dly_fb = lim(x->dly_fb, 0, 127);
+        x->dly_mix = lim(x->dly_mix, 0, 127);
+        x->dly_tone = lim(x->dly_tone, 0, 127);
+        x->dly_mode = x->dly_mode ? 1u : 0u;
     }
     return 0;
 }

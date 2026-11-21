@@ -25,9 +25,9 @@ bottom. "Unverified" means nobody has measured it on a device yet, as far as we 
 | Keys | one chord per key; LEARN turns them into chromatic notes F3 – G5 (plus the octave) |
 | Screen | light background, dark text; the chord's name in 50 px Barlow Bold, inversion / voicing and octave in 24 px |
 | Synth | 10 voices, two oscillators + sub + FM, 12 dB SVF with its envelope, amp envelope, stereo chorus, reverb; one core |
-| Storage | user sets: 10 in `OBJ_PAT0`, 10 in `OBJ_PAT1` (336 B each); settings in `OBJ_SOUND`; X0X's calibration (`OBJ_PANEL`) untouched |
+| Storage | user sets: 10 in `OBJ_PAT0`, 10 in `OBJ_PAT1` (376 B each from 0.6; 336 B before); settings in `OBJ_SOUND`; X0X's calibration (`OBJ_PANEL`) untouched |
 | MIDI | notes out on a chosen channel (synth, MIDI or both); notes in play the keys (F3 = key 1); MIDI clock in drives the arpeggiator |
-| CPU | host measurement: about 120 ns a frame for five voices with chorus and reverb on a PC. On the FM-1: **unverified** |
+| CPU | host measurement: about 120 ns a frame (0.5) and up to about 180 ns (0.6, ten voices of the busiest sound: 24 dB filter, drive, matrix, delay, reverb) on a PC. The budget at 44.1 kHz is about 8,000 cycles a frame at 360 MHz. On the FM-1: **unverified** |
 
 ## Build and update
 

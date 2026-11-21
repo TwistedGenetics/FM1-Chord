@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6
+
+- **A bigger synth.** The filter is now low-pass, band-pass, high-pass or notch, at 12 or 24 dB, with drive into it.
+  Two LFOs (free or synced to the tempo; sine, triangle, saw, square, random), a mod envelope and a six-slot
+  **mod matrix** (pitch, cutoff, resonance, osc B, FM, pulse width, volume, detune, sub, drive, filter env, LFO 1
+  speed, delay, reverb, chorus). A **tempo-synced delay**, stereo or ping-pong, with tone and dub-style feedback.
+- **Macros:** four per sound, on the FM-1's new MACRO page (HOME twice), each labelled with what it moves.
+- **16 new sounds** that use all of it: Reese chord, hoover stab, atmos pad, liquid strings, ragga horn, dark sub
+  pad, rave organ, Juno strings, house organ, Detroit stab, dub techno, FM piano, wobble chord (synced LFO), PWM
+  brass, air glass pad, tape chords. 27 in all.
+- New FM-1 pages: FILTER, MOD ENV and LFO (ENV), DELAY (FX), MACRO (HOME). The editor's Sound tab has it all,
+  including the matrix.
+- Sets are 376 bytes (version 2); sets saved by 0.5 and before load as they were, and the editor still talks to
+  older firmware. Editor protocol 3.
+- The synth's tempo follows MIDI clock when CLOCK is MIDI.
+- Tests: the editor's synth is checked against the firmware's for every sound (and one with every feature on).
+
 ## 0.5
 
 - **Fix: OCT− / OCT+ did nothing on sets with voice leading on** (the FM-1 and the editor): each chord was led

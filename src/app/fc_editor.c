@@ -5,7 +5,8 @@
 enum { FC_ED_INFO = 40, FC_ED_SET_GET, FC_ED_SET_PUT, FC_ED_NAMES, FC_ED_SELECT, FC_ED_KEY, FC_ED_GLOB_GET,
        FC_ED_GLOB_PUT, FC_ED_EVT /* 48: sent by the FM-1 (live sync), never asked for */ };
 #define FC_ED_WORKING 127u
-#define FC_ED_PROTO 2u               /* 2 (0.3): set numbers are two bytes, hi lo (factory sets from 128) */
+#define FC_ED_PROTO 3u               /* 2 (0.3): set numbers are two bytes, hi lo (factory sets from 128);
+                                      * 3 (0.6): sets are 376 bytes (a 336-byte version 1 set is still taken) */
 
 int fc_ed_long(uint32_t cmd) { return cmd == FC_ED_SET_PUT || cmd == FC_ED_GLOB_PUT; }
 
@@ -75,7 +76,10 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
         s = (uint32_t)a[0] << 7 | a[1];
         put(a[0]);
         put(a[1]);
-        if (fc_ed_unpack(a + 2, na - 2u, (uint8_t *)&t, FC_SET_BYTES) != FC_SET_BYTES) {
+        i = fc_ed_unpack(a + 2, na - 2u, (uint8_t *)&t, FC_SET_BYTES);
+        if (i == FC_SET_BYTES_V1)                /* an older editor's set: its sound gets part 2's defaults */
+            t.version = 1;
+        else if (i != FC_SET_BYTES) {
             put(1);
             return 1;
         }
@@ -96,7 +100,7 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
         }
         if (s == FC_ED_WORKING || s == fc_g.cur_set) {   /* the keys play it now */
             uint32_t same = 1;
-            for (i = 64; i < FC_SET_BYTES; i++)  /* the chords as they were: notes keep sounding (live editing) */
+            for (i = 64; i < 64u + sizeof t.ch; i++)   /* the chords as they were: notes keep sounding (live editing) */
                 if (((const uint8_t *)&t)[i] != ((const uint8_t *)&fc_set)[i])
                     same = 0;
             fc_lock();
@@ -106,7 +110,8 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
                 fc_synth_all_off(&fc_syn);
             }
             fc_set = t;
-            fc_synth_sound(&fc_syn, &fc_set.sound);
+            fc_synth_sound(&fc_syn, &fc_set.sound, &fc_set.sx);
+            fc_synth_tempo(&fc_syn, (float)fc_set.tempo);
             fc_unlock();
             fc_dirty = s == FC_ED_WORKING;
         }

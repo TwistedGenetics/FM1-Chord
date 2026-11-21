@@ -20,6 +20,9 @@ build/host/chord_test dump | node tests/host/chord_xcheck.mjs
 # shellcheck disable=SC2086
 $CC $W tests/host/synth_test.c src/dsp/fc_synth.c $CORE -o build/host/synth_test
 build/host/synth_test build/host
+# shellcheck disable=SC2086
+$CC $W tests/host/synth_dump.c src/dsp/fc_synth.c $CORE -lm -o build/host/synth_dump
+build/host/synth_dump | node tests/host/synth_xcheck.mjs
 python3 tools/gen_presets.py --bin build/host/presets
 node tests/host/presets_xcheck.mjs build/host/presets
 # shellcheck disable=SC2086

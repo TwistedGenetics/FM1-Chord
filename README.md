@@ -24,10 +24,12 @@ spread), slash bass and octave; LEARN captures a chord from notes you play; stru
 MIDI clock), latch, auto voice leading, velocity humanise, transpose. The screen is light with big type: the chord's
 name, its inversion and voicing, the octave.
 
-**The synth:** ten voices, two oscillators (saw, square, triangle, sine, organ, pulse) with detune, a sub and FM, a
-12 dB filter with its own envelope, an amp envelope, a Juno-style stereo chorus and a reverb. Eleven sounds to start
-from: warm pad, dark pad, liquid keys, neuro stab, rave stab, garage organ, glass keys, strings, void pad, dub chord,
-bell stab.
+**The synth:** ten voices, two oscillators (saw, square, triangle, sine, organ, pulse) with detune, a sub and FM,
+drive into a low-pass / band-pass / high-pass / notch filter (12 or 24 dB) with its own envelope, an amp envelope;
+two LFOs (free or tempo-synced), a mod envelope and a six-slot mod matrix with four macro knobs; a Juno-style stereo
+chorus, a tempo-synced stereo / ping-pong delay and a reverb. 27 sounds to start from, among them warm pad, dark
+pad, liquid keys, neuro stab, rave stab, Reese chord, hoover stab, atmos pad, liquid strings, ragga horn, Juno
+strings, house organ, Detroit stab, dub techno, FM piano, wobble chord and tape chords.
 
 **Factory sets (118):** the **Roland J-6's 100 chord sets**, as **J6 01 POP** to **J6 100 MODERN** (the J-6 manual's
 chord set list, its voicings kept note for note, each FM-1 key playing the J-6 chord of the same note name); and

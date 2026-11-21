@@ -297,6 +297,1252 @@
    "rev_size": 105,
    "level": 108,
    "vel_sens": 70
+  },
+  {
+   "name": "REESE CHORD",
+   "file": "reese_chord",
+   "wave_a": "saw",
+   "wave_b": "saw",
+   "detune": 44,
+   "b_level": 110,
+   "sub": 60,
+   "fm": 0,
+   "cutoff": 56,
+   "res": 30,
+   "fenv": 30,
+   "ftrack": 40,
+   "amp_a": 4,
+   "amp_d": 90,
+   "amp_s": 115,
+   "amp_r": 70,
+   "flt_a": 10,
+   "flt_d": 90,
+   "flt_s": 70,
+   "flt_r": 70,
+   "chorus": 55,
+   "rev_mix": 30,
+   "rev_size": 80,
+   "level": 96,
+   "vel_sens": 30,
+   "x": {
+    "filter": "lp",
+    "slope": 24,
+    "drive": 45,
+    "lfo1": {
+     "wave": "tri",
+     "rate": 36
+    },
+    "mod": [
+     [
+      "lfo1",
+      "cutoff",
+      14
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "drive",
+      70
+     ],
+     [
+      "macro3",
+      "detune",
+      60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     40,
+     30,
+     30,
+     0
+    ],
+    "delay": {
+     "time": "1/8D",
+     "fb": 45,
+     "mix": 0,
+     "tone": 60,
+     "mode": "pingpong"
+    }
+   }
+  },
+  {
+   "name": "HOOVER STAB",
+   "file": "hoover_stab",
+   "wave_a": "pulse",
+   "wave_b": "saw",
+   "detune": 50,
+   "b_level": 110,
+   "sub": 40,
+   "fm": 0,
+   "cutoff": 70,
+   "res": 35,
+   "fenv": 45,
+   "ftrack": 50,
+   "amp_a": 0,
+   "amp_d": 82,
+   "amp_s": 70,
+   "amp_r": 58,
+   "flt_a": 0,
+   "flt_d": 72,
+   "flt_s": 50,
+   "flt_r": 55,
+   "chorus": 110,
+   "rev_mix": 35,
+   "rev_size": 80,
+   "level": 92,
+   "vel_sens": 40,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "drive": 35,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 70
+    },
+    "menv": [
+     0,
+     52,
+     0,
+     40
+    ],
+    "mod": [
+     [
+      "menv",
+      "pitch",
+      -46
+     ],
+     [
+      "lfo1",
+      "pulse width",
+      60
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "pitch",
+      -50
+     ],
+     [
+      "macro3",
+      "drive",
+      60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     0,
+     20,
+     0
+    ],
+    "delay": {
+     "time": "1/8D",
+     "fb": 40,
+     "mix": 0,
+     "tone": 70,
+     "mode": "pingpong"
+    }
+   }
+  },
+  {
+   "name": "ATMOS PAD",
+   "file": "atmos_pad",
+   "wave_a": "saw",
+   "wave_b": "tri",
+   "detune": 22,
+   "b_level": 90,
+   "sub": 25,
+   "fm": 0,
+   "cutoff": 58,
+   "res": 25,
+   "fenv": 20,
+   "ftrack": 40,
+   "amp_a": 95,
+   "amp_d": 95,
+   "amp_s": 120,
+   "amp_r": 105,
+   "flt_a": 95,
+   "flt_d": 100,
+   "flt_s": 70,
+   "flt_r": 100,
+   "chorus": 90,
+   "rev_mix": 80,
+   "rev_size": 118,
+   "level": 100,
+   "vel_sens": 20,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 18
+    },
+    "lfo2": {
+     "wave": "tri",
+     "rate": 30
+    },
+    "mod": [
+     [
+      "lfo1",
+      "cutoff",
+      20
+     ],
+     [
+      "lfo2",
+      "pulse width",
+      40
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "reverb mix",
+      70
+     ],
+     [
+      "macro3",
+      "resonance",
+      60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     30,
+     20,
+     40
+    ],
+    "delay": {
+     "time": "1/4D",
+     "fb": 70,
+     "mix": 40,
+     "tone": 55,
+     "mode": "pingpong"
+    }
+   }
+  },
+  {
+   "name": "LIQUID STRINGS",
+   "file": "liquid_strings",
+   "wave_a": "saw",
+   "wave_b": "saw",
+   "detune": 28,
+   "b_level": 110,
+   "sub": 0,
+   "fm": 0,
+   "cutoff": 72,
+   "res": 12,
+   "fenv": 14,
+   "ftrack": 50,
+   "amp_a": 84,
+   "amp_d": 85,
+   "amp_s": 120,
+   "amp_r": 90,
+   "flt_a": 70,
+   "flt_d": 85,
+   "flt_s": 90,
+   "flt_r": 90,
+   "chorus": 105,
+   "rev_mix": 55,
+   "rev_size": 100,
+   "level": 100,
+   "vel_sens": 30,
+   "x": {
+    "filter": "lp",
+    "slope": 24,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 72
+    },
+    "mod": [
+     [
+      "lfo1",
+      "pitch",
+      5
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "amp",
+      -60
+     ],
+     [
+      "macro3",
+      "chorus",
+      50
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     0,
+     40,
+     0
+    ],
+    "delay": {
+     "time": "1/4",
+     "fb": 55,
+     "mix": 0,
+     "tone": 70
+    }
+   }
+  },
+  {
+   "name": "RAGGA HORN",
+   "file": "ragga_horn",
+   "wave_a": "square",
+   "wave_b": "saw",
+   "detune": 12,
+   "b_level": 90,
+   "sub": 20,
+   "fm": 0,
+   "cutoff": 46,
+   "res": 28,
+   "fenv": 40,
+   "ftrack": 60,
+   "amp_a": 6,
+   "amp_d": 74,
+   "amp_s": 85,
+   "amp_r": 40,
+   "flt_a": 30,
+   "flt_d": 70,
+   "flt_s": 40,
+   "flt_r": 40,
+   "chorus": 30,
+   "rev_mix": 35,
+   "rev_size": 70,
+   "level": 106,
+   "vel_sens": 60,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "drive": 30,
+    "menv": [
+     34,
+     60,
+     20,
+     40
+    ],
+    "lfo1": {
+     "wave": "sine",
+     "rate": 76
+    },
+    "mod": [
+     [
+      "menv",
+      "cutoff",
+      50
+     ],
+     [
+      "lfo1",
+      "pitch",
+      4
+     ],
+     [
+      "velocity",
+      "cutoff",
+      30
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "drive",
+      70
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     30,
+     64,
+     30
+    ],
+    "delay": {
+     "time": "1/8D",
+     "fb": 50,
+     "mix": 30,
+     "tone": 60,
+     "mode": "pingpong"
+    }
+   }
+  },
+  {
+   "name": "DARK SUB PAD",
+   "file": "dark_sub_pad",
+   "wave_a": "saw",
+   "wave_b": "sine",
+   "detune": 16,
+   "b_level": 80,
+   "sub": 100,
+   "fm": 0,
+   "cutoff": 36,
+   "res": 30,
+   "fenv": 12,
+   "ftrack": 20,
+   "amp_a": 80,
+   "amp_d": 95,
+   "amp_s": 120,
+   "amp_r": 95,
+   "flt_a": 90,
+   "flt_d": 95,
+   "flt_s": 60,
+   "flt_r": 95,
+   "chorus": 70,
+   "rev_mix": 55,
+   "rev_size": 105,
+   "level": 110,
+   "vel_sens": 20,
+   "x": {
+    "filter": "lp",
+    "slope": 24,
+    "drive": 20,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 10
+    },
+    "lfo2": {
+     "wave": "s&h",
+     "rate": 70,
+     "sync": 1
+    },
+    "mod": [
+     [
+      "lfo1",
+      "cutoff",
+      16
+     ],
+     [
+      "lfo2",
+      "cutoff",
+      8
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "resonance",
+      70
+     ],
+     [
+      "macro3",
+      "sub",
+      -70
+     ],
+     [
+      "macro4",
+      "lfo1 rate",
+      80
+     ]
+    ],
+    "macros": [
+     40,
+     20,
+     0,
+     30
+    ]
+   }
+  },
+  {
+   "name": "RAVE ORGAN",
+   "file": "rave_organ",
+   "wave_a": "organ",
+   "wave_b": "square",
+   "detune": 8,
+   "b_level": 60,
+   "sub": 30,
+   "fm": 0,
+   "cutoff": 84,
+   "res": 25,
+   "fenv": 30,
+   "ftrack": 60,
+   "amp_a": 0,
+   "amp_d": 72,
+   "amp_s": 80,
+   "amp_r": 30,
+   "flt_a": 0,
+   "flt_d": 60,
+   "flt_s": 50,
+   "flt_r": 30,
+   "chorus": 50,
+   "rev_mix": 35,
+   "rev_size": 70,
+   "level": 104,
+   "vel_sens": 40,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "drive": 55,
+    "mod": [
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "drive",
+      70
+     ],
+     [
+      "macro3",
+      "osc b",
+      70
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     40,
+     0,
+     40
+    ],
+    "delay": {
+     "time": "1/8",
+     "fb": 35,
+     "mix": 25,
+     "tone": 80
+    }
+   }
+  },
+  {
+   "name": "JUNO STRINGS",
+   "file": "juno_strings",
+   "wave_a": "saw",
+   "wave_b": "pulse",
+   "detune": 20,
+   "b_level": 100,
+   "sub": 25,
+   "fm": 0,
+   "cutoff": 74,
+   "res": 12,
+   "fenv": 15,
+   "ftrack": 50,
+   "amp_a": 76,
+   "amp_d": 85,
+   "amp_s": 118,
+   "amp_r": 86,
+   "flt_a": 60,
+   "flt_d": 80,
+   "flt_s": 80,
+   "flt_r": 85,
+   "chorus": 127,
+   "rev_mix": 45,
+   "rev_size": 90,
+   "level": 100,
+   "vel_sens": 30,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "lfo1": {
+     "wave": "tri",
+     "rate": 60
+    },
+    "mod": [
+     [
+      "lfo1",
+      "pulse width",
+      80
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "chorus",
+      -80
+     ],
+     [
+      "macro3",
+      "amp",
+      -60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     0,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "name": "HOUSE ORGAN",
+   "file": "house_organ",
+   "wave_a": "organ",
+   "wave_b": "sine",
+   "detune": 4,
+   "b_level": 40,
+   "sub": 0,
+   "fm": 20,
+   "cutoff": 98,
+   "res": 10,
+   "fenv": 15,
+   "ftrack": 70,
+   "amp_a": 0,
+   "amp_d": 80,
+   "amp_s": 95,
+   "amp_r": 30,
+   "flt_a": 0,
+   "flt_d": 55,
+   "flt_s": 70,
+   "flt_r": 30,
+   "chorus": 40,
+   "rev_mix": 30,
+   "rev_size": 70,
+   "level": 108,
+   "vel_sens": 40,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 82
+    },
+    "mod": [
+     [
+      "lfo1",
+      "amp",
+      10
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "fm",
+      60
+     ],
+     [
+      "macro3",
+      "amp",
+      -40
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     0,
+     0,
+     0
+    ],
+    "delay": {
+     "time": "1/8D",
+     "fb": 40,
+     "mix": 0,
+     "tone": 80
+    }
+   }
+  },
+  {
+   "name": "DETROIT STAB",
+   "file": "detroit_stab",
+   "wave_a": "saw",
+   "wave_b": "square",
+   "detune": 14,
+   "b_level": 90,
+   "sub": 20,
+   "fm": 0,
+   "cutoff": 52,
+   "res": 62,
+   "fenv": 80,
+   "ftrack": 50,
+   "amp_a": 0,
+   "amp_d": 70,
+   "amp_s": 0,
+   "amp_r": 48,
+   "flt_a": 0,
+   "flt_d": 60,
+   "flt_s": 0,
+   "flt_r": 46,
+   "chorus": 40,
+   "rev_mix": 45,
+   "rev_size": 90,
+   "level": 118,
+   "vel_sens": 50,
+   "x": {
+    "filter": "lp",
+    "slope": 24,
+    "drive": 25,
+    "mod": [
+     [
+      "velocity",
+      "cutoff",
+      30
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "resonance",
+      60
+     ],
+     [
+      "macro3",
+      "filter env",
+      -60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      -80
+     ]
+    ],
+    "macros": [
+     64,
+     30,
+     20,
+     0
+    ],
+    "delay": {
+     "time": "1/8D",
+     "fb": 60,
+     "mix": 45,
+     "tone": 70,
+     "mode": "pingpong"
+    }
+   }
+  },
+  {
+   "name": "DUB TECHNO",
+   "file": "dub_techno",
+   "wave_a": "saw",
+   "wave_b": "saw",
+   "detune": 14,
+   "b_level": 90,
+   "sub": 0,
+   "fm": 0,
+   "cutoff": 48,
+   "res": 62,
+   "fenv": 55,
+   "ftrack": 40,
+   "amp_a": 0,
+   "amp_d": 72,
+   "amp_s": 0,
+   "amp_r": 56,
+   "flt_a": 0,
+   "flt_d": 62,
+   "flt_s": 0,
+   "flt_r": 56,
+   "chorus": 60,
+   "rev_mix": 70,
+   "rev_size": 118,
+   "level": 112,
+   "vel_sens": 40,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "lfo2": {
+     "wave": "sine",
+     "rate": 30,
+     "sync": 1
+    },
+    "mod": [
+     [
+      "lfo2",
+      "cutoff",
+      14
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "resonance",
+      50
+     ],
+     [
+      "macro3",
+      "reverb mix",
+      60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     30,
+     30,
+     40
+    ],
+    "delay": {
+     "time": "1/8D",
+     "fb": 92,
+     "mix": 60,
+     "tone": 40,
+     "mode": "pingpong"
+    },
+    "drive": 30
+   }
+  },
+  {
+   "name": "FM PIANO",
+   "file": "fm_piano",
+   "wave_a": "sine",
+   "wave_b": "sine",
+   "detune": 3,
+   "b_level": 0,
+   "sub": 0,
+   "fm": 30,
+   "cutoff": 100,
+   "res": 10,
+   "fenv": 20,
+   "ftrack": 70,
+   "amp_a": 0,
+   "amp_d": 86,
+   "amp_s": 30,
+   "amp_r": 66,
+   "flt_a": 0,
+   "flt_d": 70,
+   "flt_s": 40,
+   "flt_r": 66,
+   "chorus": 60,
+   "rev_mix": 35,
+   "rev_size": 80,
+   "level": 112,
+   "vel_sens": 70,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "menv": [
+     0,
+     58,
+     0,
+     50
+    ],
+    "lfo1": {
+     "wave": "sine",
+     "rate": 76
+    },
+    "mod": [
+     [
+      "menv",
+      "fm",
+      50
+     ],
+     [
+      "velocity",
+      "fm",
+      40
+     ],
+     [
+      "lfo1",
+      "amp",
+      12
+     ],
+     [
+      "macro1",
+      "fm",
+      60
+     ],
+     [
+      "macro2",
+      "cutoff",
+      -60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     30,
+     0,
+     64,
+     0
+    ],
+    "delay": {
+     "time": "1/4",
+     "fb": 40,
+     "mix": 0,
+     "tone": 70
+    }
+   }
+  },
+  {
+   "name": "WOBBLE CHORD",
+   "file": "wobble_chord",
+   "wave_a": "saw",
+   "wave_b": "square",
+   "detune": 30,
+   "b_level": 110,
+   "sub": 70,
+   "fm": 0,
+   "cutoff": 40,
+   "res": 70,
+   "fenv": 20,
+   "ftrack": 40,
+   "amp_a": 0,
+   "amp_d": 90,
+   "amp_s": 115,
+   "amp_r": 50,
+   "flt_a": 0,
+   "flt_d": 80,
+   "flt_s": 80,
+   "flt_r": 50,
+   "chorus": 40,
+   "rev_mix": 25,
+   "rev_size": 70,
+   "level": 98,
+   "vel_sens": 40,
+   "x": {
+    "filter": "lp",
+    "slope": 24,
+    "drive": 60,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 96,
+     "sync": 1
+    },
+    "mod": [
+     [
+      "lfo1",
+      "cutoff",
+      50
+     ],
+     [
+      "macro1",
+      "lfo1 rate",
+      70
+     ],
+     [
+      "macro2",
+      "drive",
+      60
+     ],
+     [
+      "macro3",
+      "resonance",
+      50
+     ],
+     [
+      "macro4",
+      "cutoff",
+      50
+     ]
+    ],
+    "macros": [
+     0,
+     30,
+     20,
+     20
+    ]
+   }
+  },
+  {
+   "name": "PWM BRASS",
+   "file": "pwm_brass",
+   "wave_a": "pulse",
+   "wave_b": "pulse",
+   "detune": 18,
+   "b_level": 100,
+   "sub": 30,
+   "fm": 0,
+   "cutoff": 50,
+   "res": 20,
+   "fenv": 50,
+   "ftrack": 50,
+   "amp_a": 30,
+   "amp_d": 80,
+   "amp_s": 100,
+   "amp_r": 50,
+   "flt_a": 40,
+   "flt_d": 74,
+   "flt_s": 40,
+   "flt_r": 50,
+   "chorus": 70,
+   "rev_mix": 35,
+   "rev_size": 80,
+   "level": 102,
+   "vel_sens": 60,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "menv": [
+     30,
+     64,
+     30,
+     50
+    ],
+    "lfo1": {
+     "wave": "tri",
+     "rate": 54
+    },
+    "mod": [
+     [
+      "lfo1",
+      "pulse width",
+      70
+     ],
+     [
+      "menv",
+      "cutoff",
+      36
+     ],
+     [
+      "velocity",
+      "cutoff",
+      24
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "pulse width",
+      80
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     64,
+     0,
+     64,
+     0
+    ]
+   }
+  },
+  {
+   "name": "AIR GLASS PAD",
+   "file": "air_glass_pad",
+   "wave_a": "tri",
+   "wave_b": "sine",
+   "detune": 18,
+   "b_level": 90,
+   "sub": 0,
+   "fm": 30,
+   "cutoff": 60,
+   "res": 30,
+   "fenv": 10,
+   "ftrack": 50,
+   "amp_a": 88,
+   "amp_d": 95,
+   "amp_s": 115,
+   "amp_r": 100,
+   "flt_a": 80,
+   "flt_d": 90,
+   "flt_s": 80,
+   "flt_r": 100,
+   "chorus": 90,
+   "rev_mix": 85,
+   "rev_size": 120,
+   "level": 112,
+   "vel_sens": 20,
+   "x": {
+    "filter": "hp",
+    "slope": 12,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 24
+    },
+    "lfo2": {
+     "wave": "tri",
+     "rate": 44
+    },
+    "mod": [
+     [
+      "lfo1",
+      "pitch",
+      4
+     ],
+     [
+      "lfo2",
+      "fm",
+      20
+     ],
+     [
+      "macro1",
+      "cutoff",
+      -60
+     ],
+     [
+      "macro2",
+      "fm",
+      60
+     ],
+     [
+      "macro3",
+      "reverb mix",
+      60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     30,
+     20,
+     30,
+     30
+    ],
+    "delay": {
+     "time": "1/4D",
+     "fb": 60,
+     "mix": 30,
+     "tone": 90,
+     "mode": "pingpong"
+    }
+   }
+  },
+  {
+   "name": "TAPE CHORDS",
+   "file": "tape_chords",
+   "wave_a": "saw",
+   "wave_b": "tri",
+   "detune": 10,
+   "b_level": 80,
+   "sub": 20,
+   "fm": 0,
+   "cutoff": 52,
+   "res": 15,
+   "fenv": 15,
+   "ftrack": 40,
+   "amp_a": 30,
+   "amp_d": 85,
+   "amp_s": 110,
+   "amp_r": 70,
+   "flt_a": 30,
+   "flt_d": 80,
+   "flt_s": 80,
+   "flt_r": 70,
+   "chorus": 50,
+   "rev_mix": 40,
+   "rev_size": 80,
+   "level": 104,
+   "vel_sens": 30,
+   "x": {
+    "filter": "lp",
+    "slope": 12,
+    "drive": 30,
+    "lfo1": {
+     "wave": "sine",
+     "rate": 28
+    },
+    "lfo2": {
+     "wave": "s&h",
+     "rate": 96
+    },
+    "mod": [
+     [
+      "lfo1",
+      "pitch",
+      6
+     ],
+     [
+      "lfo2",
+      "pitch",
+      3
+     ],
+     [
+      "macro1",
+      "cutoff",
+      60
+     ],
+     [
+      "macro2",
+      "pitch",
+      9
+     ],
+     [
+      "macro3",
+      "drive",
+      60
+     ],
+     [
+      "macro4",
+      "delay mix",
+      80
+     ]
+    ],
+    "macros": [
+     50,
+     0,
+     30,
+     0
+    ],
+    "delay": {
+     "time": "1/4",
+     "fb": 45,
+     "mix": 0,
+     "tone": 40
+    }
+   }
   }
  ],
  "sets": [

@@ -22,6 +22,7 @@ static int fails;
     } while (0)
 
 static float rv[FC_RV_FLOATS];
+static int16_t dly[2u * FC_DLY_LEN];
 static fc_synth_t syn;
 
 static void wav_write(const char *path, const float *lr, uint32_t frames)
@@ -90,8 +91,8 @@ int main(int argc, char **argv)
         char path[256];
         clock_t t0;
         double ns;
-        fc_synth_init(&syn, rv);
-        fc_synth_sound(&syn, &FC_SOUNDS[si].snd);
+        fc_synth_init(&syn, rv, dly);
+        fc_synth_sound(&syn, &FC_SOUNDS[si].snd, &FC_SOUNDS[si].sx);
         t0 = clock();
         for (k = 0; k < 4u; k++) {
             uint8_t nt[FC_MAXN];
@@ -133,7 +134,7 @@ int main(int argc, char **argv)
     /* voice stealing: 14 notes on 10 voices, then all off: nothing stuck */
     {
         uint32_t i;
-        fc_synth_init(&syn, rv);
+        fc_synth_init(&syn, rv, dly);
         for (i = 0; i < 14u; i++)
             fc_synth_on(&syn, 48u + i, 100);
         CHECK(fc_synth_active(&syn) == FC_VOICES, "stealing: %u voices", fc_synth_active(&syn));

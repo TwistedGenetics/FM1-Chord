@@ -6,8 +6,9 @@
 #include <stdint.h>
 #include "fc_chord.h"
 
-#define FC_SET_VERSION 1u
-#define FC_SET_BYTES 336u
+#define FC_SET_VERSION 2u          /* 2 (0.6): fc_sound2_t on the end; a version 1 set is the first 336 bytes */
+#define FC_SET_BYTES 376u
+#define FC_SET_BYTES_V1 336u
 #define FC_NUSER 20u                /* user sets on the FM-1: 10 in OBJ_PAT0, 10 in OBJ_PAT1 */
 #define FC_FACTORY0 128u            /* set numbers: 0..19 user sets, 128 + n factory set n (to 254) */
 
@@ -25,6 +26,43 @@ typedef struct {
     uint8_t level, vel_sens;
 } fc_sound_t;
 enum { FC_W_SAW, FC_W_SQUARE, FC_W_TRI, FC_W_SINE, FC_W_ORGAN, FC_W_PULSE, FC_NW };
+
+/* the synth voice, part 2 (0.6): filter modes, drive, two LFOs, a mod envelope, a mod matrix, macros, delay.
+ * 40 bytes. A modulation: what moves (FC_MS_*), what it moves (FC_MD_*), how far (-127..127). */
+typedef struct {
+    uint8_t src, dst;
+    int8_t amt;
+} fc_mod_t;
+#define FC_NMOD 6u
+#define FC_NMACRO 4u
+typedef struct {
+    uint8_t flt_mode;               /* FC_F_*: low-pass, band-pass, high-pass, notch */
+    uint8_t flt_slope;              /* 0 12 dB, 1 24 dB */
+    uint8_t drive;                  /* into the filter, 0..127 */
+    uint8_t lfo_wave[2];            /* FC_L_* */
+    uint8_t lfo_rate[2];            /* 0..127: free 0.03..30 Hz; synced, a division of the beat (FC_NDIV of them) */
+    uint8_t lfo_sync[2];            /* 0 free, 1 to the tempo */
+    uint8_t menv_a, menv_d, menv_s, menv_r;   /* the mod envelope (a matrix source) */
+    fc_mod_t mod[FC_NMOD];
+    uint8_t macro[FC_NMACRO];       /* the macro knobs' values (matrix sources) */
+    uint8_t dly_time;               /* FC_D_*: a division of the beat */
+    uint8_t dly_fb, dly_mix, dly_tone;
+    uint8_t dly_mode;               /* 0 stereo, 1 ping-pong */
+} fc_sound2_t;
+enum { FC_F_LP, FC_F_BP, FC_F_HP, FC_F_NOTCH, FC_NFMODE };
+enum { FC_L_SINE, FC_L_TRI, FC_L_SAW, FC_L_SQUARE, FC_L_SH, FC_NLWAVE };
+/* matrix sources: LFOs, the mod envelope, velocity, the key (C4 = 0), the macros */
+enum { FC_MS_NONE, FC_MS_LFO1, FC_MS_LFO2, FC_MS_MENV, FC_MS_VEL, FC_MS_KEY, FC_MS_M1, FC_MS_M2, FC_MS_M3, FC_MS_M4,
+       FC_NMS };
+/* matrix destinations. 1..11 for each voice; 12..15 for the whole synth (moved by the LFOs and macros only) */
+enum { FC_MD_NONE, FC_MD_PITCH, FC_MD_CUT, FC_MD_RES, FC_MD_BLEV, FC_MD_FM, FC_MD_PW, FC_MD_AMP, FC_MD_DETUNE,
+       FC_MD_SUB, FC_MD_DRIVE, FC_MD_FENV, FC_MD_L1RATE, FC_MD_DLYMIX, FC_MD_REVMIX, FC_MD_CHORUS, FC_NMD };
+/* beat divisions, shortest first: a synced LFO's rate 0..127 runs 8 bars .. 1/32; the delay's time 1/32 .. 1 bar */
+#define FC_NDIV 15u
+enum { FC_D_32, FC_D_16T, FC_D_16, FC_D_8T, FC_D_16D, FC_D_8, FC_D_4T, FC_D_8D, FC_D_4, FC_D_4D, FC_D_2, FC_D_1,
+       FC_D_2BAR, FC_D_4BAR, FC_D_8BAR };
+extern const float FC_DIV_BEATS[FC_NDIV];
+extern const char *const FC_DIV_NAME[FC_NDIV];
 
 /* how the keys play: 16 bytes */
 typedef struct {
@@ -56,11 +94,13 @@ typedef struct {
     fc_play_t play;
     fc_chord_t ch[FC_NKEYS];
     uint8_t reserved[2];
+    fc_sound2_t sx;                 /* from version 2 */
 } fc_set_t;
 _Static_assert(sizeof(fc_sound_t) == 24, "fc_sound_t is 24 bytes");
 _Static_assert(sizeof(fc_play_t) == 16, "fc_play_t is 16 bytes");
 _Static_assert(sizeof(fc_chord_t) == 10, "fc_chord_t is 10 bytes");
-_Static_assert(sizeof(fc_set_t) == FC_SET_BYTES, "fc_set_t is 336 bytes");
+_Static_assert(sizeof(fc_sound2_t) == 40, "fc_sound2_t is 40 bytes");
+_Static_assert(sizeof(fc_set_t) == FC_SET_BYTES, "fc_set_t is 376 bytes");
 
 /* scales, as the editor names them (the FM-1 only stores the number) */
 enum { FC_SC_MAJOR, FC_SC_MINOR, FC_SC_DORIAN, FC_SC_PHRYGIAN, FC_SC_LYDIAN, FC_SC_MIXOLYDIAN, FC_SC_LOCRIAN,
@@ -85,4 +125,5 @@ int fc_set_check(fc_set_t *s);                           /* 0 = a set (values pu
 void fc_globals_init(fc_globals_t *g);
 int fc_globals_check(fc_globals_t *g);
 void fc_sound_default(fc_sound_t *s);
+void fc_sound2_default(fc_sound2_t *x);                  /* nothing moving, no delay: a version 1 set's sound */
 uint32_t fc_set_used_keys(const fc_set_t *s);            /* bit k: key k has a chord */

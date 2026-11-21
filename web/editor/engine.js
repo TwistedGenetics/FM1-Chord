@@ -28,10 +28,13 @@ function blep(t, dt) {
   if (t > 1 - dt) { t = (t - 1) / dt; return t * t + t + t + 1; }
   return 0;
 }
-function osc(w, p, dt) {
+// pw: the pulse width's move from its own (square 50 %, pulse 25 %)
+function osc(w, p, dt, pw) {
   switch (w) {
-    case 1: return (p < 0.5 ? 1 : -1) + blep(p, dt) - blep(wrap1(p + 0.5), dt);
-    case 5: return (p < 0.25 ? 1 : -1) + blep(p, dt) - blep(wrap1(p + 0.75), dt) + 0.5;
+    case 1: case 5: {
+      const h = Math.max(0.04, Math.min(0.96, (w === 1 ? 0.5 : 0.25) + pw));
+      return (p < h ? 1 : -1) + blep(p, dt) - blep(wrap1(p + 1 - h), dt) - (2 * h - 1);
+    }
     case 2: return p < 0.5 ? 4 * p - 1 : 3 - 4 * p;
     case 3: return sinTurn(p);
     case 4: {
@@ -42,14 +45,43 @@ function osc(w, p, dt) {
     default: return 2 * p - 1 - blep(p, dt);
   }
 }
+// fc_tanf: the same series, so the filter matches the FM-1's
+function tanS(x) {
+  const x2 = x * x;
+  const s = x * (1 - x2 * (1 / 6 - x2 * (1 / 120 - x2 * (1 / 5040 - x2 * (1 / 362880)))));
+  const c = 1 - x2 * (0.5 - x2 * (1 / 24 - x2 * (1 / 720 - x2 * (1 / 40320 - x2 * (1 / 3628800)))));
+  return s / c;
+}
+const clampf = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
 
 // ---- fc_synth.c ----
-const VOICES = 10, CTRL = 16, CH_LEN = 1024;
+const VOICES = 10, CTRL = 16, CH_LEN = 1024, BLOCK = 128, DLY_LEN = 32768;
+const MD = { PITCH: 1, CUT: 2, RES: 3, BLEV: 4, FM: 5, PW: 6, AMP: 7, DETUNE: 8, SUB: 9, DRIVE: 10, FENV: 11,
+  L1RATE: 12, DLYMIX: 13, REVMIX: 14, CHORUS: 15, N: 16 };
+const MS = { LFO1: 1, LFO2: 2, MENV: 3, VEL: 4, KEY: 5, M1: 6, N: 10 };
+const DIV_BEATS = [0.125, 1 / 6, 0.25, 1 / 3, 0.375, 0.5, 2 / 3, 0.75, 1, 1.5, 2, 4, 8, 16, 32];
+function modScale(dst, amt) {
+  const a = amt / 127;
+  switch (dst) {
+    case MD.PITCH: return 24 * a * Math.abs(a);
+    case MD.CUT: case MD.FENV: return 6 * a;
+    case MD.FM: return 0.5 * a;
+    case MD.PW: return 0.45 * a;
+    case MD.DETUNE: return 50 * a;
+    case MD.L1RATE: return 3 * a;
+    default: return a;
+  }
+}
+export const defaultSx = () => ({ flt_mode: 0, flt_slope: 0, drive: 0, lfo_wave: [0, 0], lfo_rate: [64, 40],
+  lfo_sync: [0, 0], menv_a: 40, menv_d: 80, menv_s: 0, menv_r: 70,
+  mod: Array.from({ length: 6 }, () => ({ src: 0, dst: 0, amt: 0 })), macro: [64, 64, 64, 64], dly_time: 7, dly_fb: 50,
+  dly_mix: 0, dly_tone: 80, dly_mode: 0 });
+
 export class Synth {
   constructor(rate = FS) {
     this.rate = rate;
-    this.v = Array.from({ length: VOICES }, () => ({ note: 0, on: 0, sa: 0, sf: 0, age: 0, pa: 0, pb: 0, ps: 0, ia: 0,
-      ib: 0, vel: 1, ea: 0, ef: 0, ic1: 0, ic2: 0, key: 0 }));
+    this.v = Array.from({ length: VOICES }, () => ({ note: 0, on: 0, sa: 0, sf: 0, sm: 0, age: 0, pa: 0, pb: 0, ps: 0,
+      ia: 0, ib: 0, vel: 1, velr: 0, ea: 0, ef: 0, em: 0, ic1: 0, ic2: 0, ic3: 0, ic4: 0, key: 0 }));
     this.age = 0;
     this.ch = new Float32Array(CH_LEN); this.chw = 0; this.chph = 0;
     const sc = rate / FS;
@@ -58,26 +90,63 @@ export class Synth {
     this.ra = [0, 1].map((c) => AL.map((l) => new Float32Array(Math.round((l + 23 * c) * sc))));
     this.rci = [[0, 0, 0, 0], [0, 0, 0, 0]]; this.rai = [[0, 0], [0, 0]]; this.rcs = [[0, 0, 0, 0], [0, 0, 0, 0]];
     this.damp = 0.25;
-    this.mono = new Float32Array(128);
+    this.mono = new Float32Array(BLOCK);
+    this.dl = [new Int16Array(DLY_LEN), new Int16Array(DLY_LEN)]; this.dlw = 0; this.dlLen = 1;
+    this.dlLp = [0, 0]; this.dlHp = [0, 0];
+    this.lfoPh = [0, 0]; this.lfoHz = [1, 1]; this.lfoSh = [0, 0]; this.lfoBlk = [new Float32Array(8), new Float32Array(8)];
+    this.rng = 0x9e3779b9; this.tempoBpm = 120;
+    this.sx = defaultSx();
   }
   tsec(v) { return 0.001 * exp2(v * (13 / 127)); }
   env(a, d, s, r) {
     const R = this.rate;
     return { a: 1 / (this.tsec(a) * R), d: exp2(-9.966 / (this.tsec(d) * R)), s: s / 127, r: exp2(-9.966 / (this.tsec(r) * R)) };
   }
-  sound(o) {
+  sound(o, x = defaultSx()) {
+    this.sx = x;
     this.amp = this.env(o.amp_a, o.amp_d, o.amp_s, o.amp_r);
     this.flt = this.env(o.flt_a, o.flt_d, o.flt_s, o.flt_r);
+    this.menv = this.env(x.menv_a, x.menv_d, x.menv_s, x.menv_r);
     const lv = o.level / 127;
     this.level = lv * lv;
     this.cut = 4.3219 + o.cutoff * (9.8 / 127);
     this.fenv = o.fenv * (6 / 127);
     this.track = o.ftrack / 127;
-    this.k = 2 - 1.94 * (o.res / 127);
-    this.detune = exp2((o.detune * (50 / 127)) / 1200);
+    this.res = o.res / 127;
+    this.detuneC = o.detune * (50 / 127);
     this.bl = o.b_level / 127; this.sub = o.sub / 127; this.fm = o.fm * (0.5 / 127); this.vs = o.vel_sens / 127;
+    this.drive = x.drive / 127;
     this.wa = o.wave_a % 6; this.wb = o.wave_b % 6;
     this.chmix = o.chorus / 127; this.rvmix = o.rev_mix / 127; this.fb = 0.7 + 0.28 * (o.rev_size / 127);
+    this.mv = []; this.mg = []; this.useMenv = false;
+    for (const m of x.mod) {
+      if (!m.src || !m.dst || !m.amt || m.src >= MS.N || m.dst >= MD.N) continue;
+      if (m.dst >= MD.L1RATE) {
+        if (m.src === MS.MENV || m.src === MS.VEL || m.src === MS.KEY) continue;
+        this.mg.push({ src: m.src, dst: m.dst, amt: modScale(m.dst, m.amt) });
+      } else {
+        this.mv.push({ src: m.src, dst: m.dst, amt: modScale(m.dst, m.amt) });
+        if (m.src === MS.MENV) this.useMenv = true;
+      }
+    }
+    this.macro = x.macro.map((v) => v / 127);
+    this.dlFb = 0.95 * (x.dly_fb / 127);
+    this.dlMix = x.dly_mix / 127;
+    this.dlC = 1 - Math.exp(-2 * Math.PI * (500 * exp2(x.dly_tone * (5 / 127))) / this.rate);
+    this.dlHc = 0.0171 * FS / this.rate;              // about 120 Hz, as the FM-1
+    this.delayLen(); this.lfoRates();
+  }
+  tempo(bpm) { this.tempoBpm = clampf(bpm, 20, 300); this.delayLen(); this.lfoRates(); }
+  delayLen() {
+    let n = DIV_BEATS[this.sx.dly_time % 15] * 60 / this.tempoBpm * this.rate;
+    while (n > DLY_LEN - 1) n *= 0.5;
+    this.dlLen = n < 1 ? 1 : Math.floor(n);
+  }
+  lfoRates() {
+    for (let i = 0; i < 2; i++) {
+      const r = this.sx.lfo_rate[i];
+      this.lfoHz[i] = this.sx.lfo_sync[i] ? this.tempoBpm / 60 / DIV_BEATS[14 - ((r * 15) >> 7)] : 0.03 * exp2(r * (10 / 127));
+    }
   }
   on(note, vel) {
     let v = this.v.find((x) => x.sa && x.note === note);
@@ -88,17 +157,18 @@ export class Synth {
         if (x.sa === 3 && (!rel || x.age < rel.age)) rel = x;
         if (!old || x.age < old.age) old = x;
       }
-      if (!v) { v = rel || old; v.ea = v.ef = 0; v.ic1 = v.ic2 = 0; }
+      if (!v) { v = rel || old; v.ea = 0; v.ef = v.em = 0; v.ic1 = v.ic2 = v.ic3 = v.ic4 = 0; }
     }
-    if (!v.sa) { v.ea = v.ef = 0; v.ic1 = v.ic2 = 0; v.pa = 0; v.pb = 0.37; v.ps = 0; }
-    v.note = note; v.on = 1; v.sa = 1; v.sf = 1; v.age = ++this.age;
+    if (!v.sa) { v.ea = v.ef = v.em = 0; v.ic1 = v.ic2 = v.ic3 = v.ic4 = 0; v.pa = 0; v.pb = 0.37; v.ps = 0; }
+    v.note = note; v.on = 1; v.sa = 1; v.sf = 1; v.sm = 1; v.age = ++this.age;
     const hz = 440 * exp2((note - 69) / 12);
-    v.ia = hz / this.rate; v.ib = v.ia * this.detune;
-    v.vel = 1 - this.vs + this.vs * (vel / 127);
+    v.ia = hz / this.rate; v.ib = v.ia * exp2(this.detuneC / 1200);
+    v.velr = vel / 127;
+    v.vel = 1 - this.vs + this.vs * v.velr;
     v.key = note - 60;
   }
-  off(note) { for (const v of this.v) if (v.sa && v.on && v.note === note) { v.on = 0; v.sa = 3; v.sf = 3; } }
-  allOff() { for (const v of this.v) if (v.sa) { v.on = 0; v.sa = 3; v.sf = 3; } }
+  off(note) { for (const v of this.v) if (v.sa && v.on && v.note === note) { v.on = 0; v.sa = 3; v.sf = 3; v.sm = 3; } }
+  allOff() { for (const v of this.v) if (v.sa) { v.on = 0; v.sa = 3; v.sf = 3; v.sm = 3; } }
   active() { return this.v.filter((v) => v.sa).length; }
   static step(st, e, c, v, which) {
     switch (v[which]) {
@@ -108,53 +178,133 @@ export class Synth {
       default: return 0;
     }
   }
+  src(v, src, blk) {
+    switch (src) {
+      case MS.LFO1: return this.lfoBlk[0][blk];
+      case MS.LFO2: return this.lfoBlk[1][blk];
+      case MS.MENV: return v ? v.em : 0;
+      case MS.VEL: return v ? v.velr : 0;
+      case MS.KEY: return v ? v.key / 60 : 0;
+      default: return src >= MS.M1 && src < MS.N ? this.macro[src - MS.M1] : 0;
+    }
+  }
+  static svfOut(mode, x, v1, v2, k) {
+    switch (mode) { case 1: return v1; case 2: return x - k * v1 - v2; case 3: return x - k * v1; default: return v2; }
+  }
   voice(v, mono, n) {
-    const gain = 0.16 * v.vel, nyq = 0.45 * this.rate;
+    const nyq = 0.45 * this.rate, mode = this.sx.flt_mode, slope = this.sx.flt_slope, R2 = 1.41421356;
+    const md = new Float32Array(MD.L1RATE);
     for (let i = 0; i < n; i += CTRL) {
-      const m = Math.min(CTRL, n - i);
-      let f = exp2(this.cut + this.fenv * v.ef + this.track * v.key / 12);
+      const m = Math.min(CTRL, n - i), blk = (i / CTRL) | 0;
+      md.fill(0);
+      for (const q of this.mv) md[q.dst] += q.amt * this.src(v, q.src, blk);
+      let ia = v.ia, ib = v.ib, bl = this.bl, sub = this.sub, fm = this.fm, pw = 0, drv = this.drive;
+      if (this.mv.length) {
+        if (md[MD.PITCH] !== 0 || md[MD.DETUNE] !== 0) {
+          ia = v.ia * exp2(md[MD.PITCH] / 12);
+          ib = ia * exp2((this.detuneC + md[MD.DETUNE]) / 1200);
+        }
+        bl = clampf(bl + md[MD.BLEV], 0, 1); sub = clampf(sub + md[MD.SUB], 0, 1);
+        fm = clampf(fm + md[MD.FM], 0, 0.5); pw = md[MD.PW]; drv = clampf(drv + md[MD.DRIVE], 0, 1);
+      }
+      const gain = 0.16 * v.vel * clampf(1 + md[MD.AMP], 0, 2);
+      let f = exp2(this.cut + (this.fenv + md[MD.FENV]) * v.ef + this.track * v.key / 12 + md[MD.CUT]);
       if (f > nyq) f = nyq;
-      const g = Math.tan(Math.PI * f / this.rate), a1 = 1 / (1 + g * (g + this.k)), a2 = g * a1, a3 = g * a2;
+      const g = tanS(Math.PI * f / this.rate), k = 2 - 1.94 * clampf(this.res + md[MD.RES], 0, 1);
+      const a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2;
+      const b1 = 1 / (1 + g * (g + R2)), b2 = g * b1, b3 = g * b2;
+      const dg = 0.5 + 3.5 * drv, dc = 2 / (1 + drv);
       for (let j = 0; j < m; j++) {
         let pa = v.pa;
-        if (this.fm > 0) pa = wrap1(pa + this.fm * sinTurn(v.pb));
-        let x = osc(this.wa, pa, v.ia);
-        if (this.bl > 0) x += this.bl * osc(this.wb, v.pb, v.ib);
-        if (this.sub > 0) x += this.sub * osc(1, v.ps, v.ia * 0.5);
-        v.pa = wrap1(v.pa + v.ia); v.pb = wrap1(v.pb + v.ib); v.ps = wrap1(v.ps + v.ia * 0.5);
+        if (fm > 0) pa = wrap1(pa + fm * sinTurn(v.pb));
+        let x = osc(this.wa, pa, ia, pw);
+        if (bl > 0) x += bl * osc(this.wb, v.pb, ib, pw);
+        if (sub > 0) x += sub * osc(1, v.ps, ia * 0.5, 0);
+        v.pa = wrap1(v.pa + ia); v.pb = wrap1(v.pb + ib); v.ps = wrap1(v.ps + ia * 0.5);
+        if (drv > 0) { const u = x * dg; x = dc * u / (1 + Math.abs(u)); }
         const v3 = x - v.ic2, v1 = a1 * v.ic1 + a2 * v3, v2 = v.ic2 + a2 * v.ic1 + a3 * v3;
         v.ic1 = 2 * v1 - v.ic1; v.ic2 = 2 * v2 - v.ic2;
+        let y = Synth.svfOut(mode, x, v1, v2, k);
+        if (slope) {
+          const w3 = y - v.ic4, w1 = b1 * v.ic3 + b2 * w3, w2 = v.ic4 + b2 * v.ic3 + b3 * w3;
+          v.ic3 = 2 * w1 - v.ic3; v.ic4 = 2 * w2 - v.ic4;
+          y = Synth.svfOut(mode, y, mode === 1 ? R2 * w1 : w1, w2, R2);
+        }
         v.ea = Synth.step(0, v.ea, this.amp, v, "sa");
         v.ef = Synth.step(0, v.ef, this.flt, v, "sf");
-        mono[i + j] += v2 * v.ea * gain;
+        if (this.useMenv) v.em = Synth.step(0, v.em, this.menv, v, "sm");
+        mono[i + j] += y * v.ea * gain;
       }
       if (!v.sa) break;
     }
-    if (!v.sa) { v.ic1 = v.ic2 = 0; v.sf = 0; }
+    if (!v.sa) { v.ic1 = v.ic2 = v.ic3 = v.ic4 = 0; v.sf = 0; v.sm = 0; v.em = 0; }
+  }
+  lfoVal(i) {
+    const p = this.lfoPh[i];
+    switch (this.sx.lfo_wave[i]) {
+      case 1: return p < 0.5 ? 4 * p - 1 : 3 - 4 * p;
+      case 2: return 1 - 2 * p;
+      case 3: return p < 0.5 ? 1 : -1;
+      case 4: return this.lfoSh[i];
+      default: return sinTurn(p);
+    }
   }
   render(L, R, off, n) {
     const mono = this.mono, sc = this.rate / FS;
     for (let done = 0; done < n;) {
-      const k = Math.min(128, n - done);
+      const k = Math.min(BLOCK, n - done);
+      const g = new Float32Array(MD.N);
+      for (const q of this.mg) g[q.dst] += q.amt * this.src(null, q.src, 0);
+      const l1 = g[MD.L1RATE] !== 0 ? exp2(g[MD.L1RATE]) : 1;
+      for (let i = 0; i < k; i += CTRL) {
+        const m = Math.min(CTRL, k - i);
+        for (let c = 0; c < 2; c++) {
+          this.lfoBlk[c][(i / CTRL) | 0] = this.lfoVal(c);
+          this.lfoPh[c] += this.lfoHz[c] * (c ? 1 : l1) * m / this.rate;
+          if (this.lfoPh[c] >= 1) {
+            this.lfoPh[c] -= Math.floor(this.lfoPh[c]);
+            this.rng = (Math.imul(this.rng, 1664525) + 1013904223) >>> 0;
+            this.lfoSh[c] = (this.rng >>> 8) * (2 / 16777216) - 1;
+          }
+        }
+      }
+      const chmix = clampf(this.chmix + g[MD.CHORUS], 0, 1), rvmix = clampf(this.rvmix + g[MD.REVMIX], 0, 1);
+      const dlmix = clampf(this.dlMix + g[MD.DLYMIX], 0, 1);
       mono.fill(0, 0, k);
       for (const v of this.v) if (v.sa) this.voice(v, mono, k);
       for (let i = 0; i < k; i++) {
         const x = mono[i];
         let l = x, r = x;
         this.ch[this.chw & (CH_LEN - 1)] = x;
-        if (this.chmix > 0) {
+        if (chmix > 0) {
           const tri = this.chph < 0.5 ? 4 * this.chph - 1 : 3 - 4 * this.chph;
           const d1 = (154 + 88 * tri) * sc, d2 = (154 - 88 * tri) * sc;
           const i1 = d1 | 0, i2 = d2 | 0, t1 = d1 - i1, t2 = d2 - i2;
           const w1 = this.ch[(this.chw - i1) & (CH_LEN - 1)] * (1 - t1) + this.ch[(this.chw - i1 - 1) & (CH_LEN - 1)] * t1;
           const w2 = this.ch[(this.chw - i2) & (CH_LEN - 1)] * (1 - t2) + this.ch[(this.chw - i2 - 1) & (CH_LEN - 1)] * t2;
-          l = x * (1 - 0.4 * this.chmix) + w1 * this.chmix;
-          r = x * (1 - 0.4 * this.chmix) + w2 * this.chmix;
+          l = x * (1 - 0.4 * chmix) + w1 * chmix;
+          r = x * (1 - 0.4 * chmix) + w2 * chmix;
           this.chph += 0.5 / this.rate;
           if (this.chph >= 1) this.chph -= 1;
         }
         this.chw++;
-        if (this.rvmix > 0) {
+        if (dlmix > 0) {
+          const rd = (this.dlw - this.dlLen) & (DLY_LEN - 1), w = this.dlw & (DLY_LEN - 1);
+          const dlv = this.dl[0][rd] / 32767, drv = this.dl[1][rd] / 32767;
+          this.dlLp[0] += this.dlC * (dlv - this.dlLp[0]) + ANTI_DENORMAL;
+          this.dlLp[1] += this.dlC * (drv - this.dlLp[1]) + ANTI_DENORMAL;
+          this.dlHp[0] += this.dlHc * (this.dlLp[0] - this.dlHp[0]);
+          this.dlHp[1] += this.dlHc * (this.dlLp[1] - this.dlHp[1]);
+          const fl = (this.dlLp[0] - this.dlHp[0]) * this.dlFb, fr = (this.dlLp[1] - this.dlHp[1]) * this.dlFb;
+          let il, ir;
+          if (this.sx.dly_mode) { il = (l + r) * 0.5 + fr; ir = fl; } else { il = l + fl; ir = r + fr; }
+          this.dl[0][w] = Math.trunc(soft(il) * 32767);
+          this.dl[1][w] = Math.trunc(soft(ir) * 32767);
+          l += dlv * dlmix;
+          r += drv * dlmix;
+        }
+        this.dlw++;
+        if (rvmix > 0) {
           const inp = (l + r) * 0.015, out = [0, 0];
           for (let c = 0; c < 2; c++) {
             let acc = 0;
@@ -173,8 +323,8 @@ export class Synth {
             }
             out[c] = acc;
           }
-          l += out[0] * this.rvmix * 3;
-          r += out[1] * this.rvmix * 3;
+          l += out[0] * rvmix * 3;
+          r += out[1] * rvmix * 3;
         }
         L[off + done + i] = soft(l * this.level);
         R[off + done + i] = soft(r * this.level);
@@ -321,9 +471,12 @@ export class Engine {
   message(m) {
     switch (m.type) {
       case "set": {
-        const changedSound = !this.set || JSON.stringify(this.set.sound) !== JSON.stringify(m.set.sound);
+        const was = this.set, sx = m.set.sx || defaultSx();
+        const changedSound = !was || JSON.stringify(was.sound) !== JSON.stringify(m.set.sound) ||
+          JSON.stringify(was.sx || null) !== JSON.stringify(m.set.sx || null);
         this.set = m.set;
-        if (changedSound) this.synth.sound(m.set.sound);
+        if (changedSound) this.synth.sound(m.set.sound, sx);
+        if (!was || was.tempo !== m.set.tempo) this.synth.tempo(m.set.tempo);
         break;
       }
       case "key": if (this.set) this.player.keyEvent(this.set, m.key, m.vel); break;

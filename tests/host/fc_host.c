@@ -283,6 +283,19 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "shot")) {
             snprintf(path, sizeof path, "%s/%s", out, b);
             shot(path);
+        } else if (!strcmp(a, "oldstore")) {     /* the user sets as 0.1 .. 0.5 saved them: 336 bytes, version 1 */
+            static uint8_t t[PLAT_STORE_MAX];
+            uint32_t o, i;
+            for (o = OBJ_PAT0; o <= OBJ_PAT1; o++)
+                if (store_len[o] == (int)(10u * FC_SET_BYTES)) {
+                    for (i = 0; i < 10u; i++) {
+                        memcpy(t + i * FC_SET_BYTES_V1, store[o] + i * FC_SET_BYTES, FC_SET_BYTES_V1);
+                        if (t[i * FC_SET_BYTES_V1] == 'F')
+                            t[i * FC_SET_BYTES_V1 + 2u] = 1;
+                    }
+                    memcpy(store[o], t, 10u * FC_SET_BYTES_V1);
+                    store_len[o] = (int)(10u * FC_SET_BYTES_V1);
+                }
         } else if (!strcmp(a, "reboot")) {
             fc_app_init();
             fc_page = PG_PLAY;
@@ -297,6 +310,16 @@ int main(int argc, char **argv)
                 got = fc_pl.key;
             else if (!strcmp(b, "sel"))
                 got = (long)fc_sel;
+            else if (!strcmp(b, "version"))
+                got = fc_set.version;
+            else if (!strcmp(b, "fmode"))
+                got = fc_set.sx.flt_mode;
+            else if (!strcmp(b, "macro1"))
+                got = fc_set.sx.macro[0];
+            else if (!strcmp(b, "dlymix"))
+                got = fc_set.sx.dly_mix;
+            else if (!strcmp(b, "tempo"))
+                got = (long)(fc_syn.tempo + 0.5f);
             else if (!strcmp(b, "sound"))
                 got = fc_set.sound.type;
             else if (!strcmp(b, "synthcut"))
