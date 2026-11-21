@@ -177,3 +177,22 @@ footer { text-align: center; color: var(--soft); padding: 18px; font-size: 16px;
   .kb .kb-key .cn { font-size: 15px; }
   .tabs button { min-width: 6em; font-size: 17px; }
 }
+/* live sync (0.4): green when changes go to the FM-1 as you make them */
+button.live { box-shadow: none; background: var(--panel); border-color: var(--line2); }
+button.live.on { background: var(--g-bg); border-color: var(--g-bd); }
+/* paste chords (0.4) */
+dialog#imp { border: 3px solid var(--ink); border-radius: 16px; background: var(--panel); color: var(--ink); padding: 0;
+  width: min(880px, 94vw); max-height: 90vh; }
+dialog#imp::backdrop { background: rgba(246, 244, 239, .82); }
+.imp { padding: 18px 22px; display: flex; flex-direction: column; gap: 12px; }
+.imp h2 { margin: 0; font-size: 26px; }
+.imp textarea { font: 20px/1.45 ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink); background: #fff;
+  border: 2px solid var(--line2); border-radius: 12px; padding: 12px; width: 100%; resize: vertical; }
+.imp .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.imp .row.end { justify-content: flex-end; }
+.imp .chk { display: flex; gap: 10px; align-items: center; font-weight: 600; }
+.imp .chk input { width: 28px; height: 28px; }
+.implist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow: auto; }
+.implist li { border: 2px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 19px; }
+.implist li > div { margin-top: 4px; font-weight: 600; word-spacing: 4px; }
+.implist .bad { color: var(--r-ink); background: var(--r-bg); border-radius: 8px; padding: 2px 8px; display: inline-block; }

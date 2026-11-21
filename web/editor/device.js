@@ -4,7 +4,7 @@
 // (docs/PROTOCOL.md; src/app/fc_editor.c answers them). Copyright (C) 2026 Jamie (TwistedGenetics).
 import { encodeSet, decodeSet, pack7, unpack7, SET_BYTES } from "./setcodec.js";
 
-export const CMD = { INFO: 40, SET_GET: 41, SET_PUT: 42, NAMES: 43, SELECT: 44, KEY: 45, GLOBALS_GET: 46, GLOBALS_PUT: 47 };
+export const CMD = { INFO: 40, SET_GET: 41, SET_PUT: 42, NAMES: 43, SELECT: 44, KEY: 45, GLOBALS_GET: 46, GLOBALS_PUT: 47, EVT: 48 };
 export const WORKING = 127, FACTORY0 = 128, NUSER = 20;
 // protocol 2 (0.3): set numbers are two 7-bit bytes, hi lo
 const slot2 = (s) => [(s >> 7) & 0x7f, s & 0x7f];
@@ -15,6 +15,7 @@ export class Device {
   constructor() {
     this.access = null; this.input = null; this.output = null; this.waiting = []; this.info = null;
     this.onchange = () => {};
+    this.onevent = null;                              // live sync: the FM-1's panel changed its set (frame 48)
     this.onnote = null;                               // notes the FM-1 sends (its keys, to light the editor's)
   }
   get connected() { return !!(this.input && this.output); }
@@ -44,6 +45,10 @@ export class Device {
   recv(d) {
     if (d[0] === 0xf0 && d[1] === 0x7d && d[2] === 0x46 && d[3] === 0x4c) {
       const cmd = d[4], body = Array.from(d.slice(5, d.length - 1));
+      if (cmd === CMD.EVT) {                          // never a reply: kind, set hi lo, dirty
+        if (this.onevent) this.onevent({ kind: body[0], cur: (body[1] << 7) | body[2], dirty: body[3] });
+        return;
+      }
       const i = this.waiting.findIndex((w) => w.cmd === cmd);
       if (i >= 0) { const w = this.waiting.splice(i, 1)[0]; clearTimeout(w.timer); w.resolve(body); }
       return;

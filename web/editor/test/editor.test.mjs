@@ -123,3 +123,73 @@ test("device protocol against the demo FM-1", async () => {
   await d.select(3);
   assert.equal((await d.getInfo()).cur, 3);
 });
+
+test("live sync: editor edits reach the FM-1, the FM-1's panel reaches the editor", async () => {
+  const { LiveSync, EVT } = await import("../live.js");
+  const m = mockFM1(sets);
+  const dev = new Device();
+  await dev.connect(m.access);
+  const live = new LiveSync(dev, { delay: 10 });
+  const got = [];
+  live.onremote = (e) => got.push(e);
+  // opening a factory set selects it on the FM-1
+  live.open(sets[3], 128 + 3);
+  await live.idle();
+  assert.equal(m.cur, 131);
+  // a burst of edits: only the newest has to land, and it does
+  const s = structuredClone(sets[3]);
+  for (let i = 0; i < 5; i++) { s.play.octave = i - 2; live.edit(s); }
+  await new Promise((r) => setTimeout(r, 60));
+  await live.idle();
+  assert.equal(m.working.play.octave, 2);
+  // the FM-1's panel: load a set, edit it, save it
+  m.panel.load(128 + 7);
+  await new Promise((r) => setTimeout(r, 60)); await live.idle();
+  assert.equal(got.at(-1).kind, EVT.LOADED);
+  assert.equal(got.at(-1).cur, 135);
+  assert.equal(got.at(-1).set.name, sets[7].name);
+  m.panel.edit((x) => { x.name = "EDITED ON FM1"; });
+  await new Promise((r) => setTimeout(r, 60)); await live.idle();
+  assert.equal(got.at(-1).kind, EVT.EDITED);
+  assert.equal(got.at(-1).set.name, "EDITED ON FM1");
+  m.panel.save(4);
+  await new Promise((r) => setTimeout(r, 60)); await live.idle();
+  assert.equal(got.at(-1).kind, EVT.SAVED);
+  assert.equal(got.at(-1).cur, 4);
+  assert.equal(m.user[4] !== null, true);
+  // off: nothing goes out
+  live.on = false;
+  s.play.octave = -3; live.edit(s);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(m.working.name, "EDITED ON FM1");
+});
+
+test("paste chords: lenient symbols, named sets, merged repeats, unreadable reported", async () => {
+  const { readChordText, readChord } = await import("../chordtext.js");
+  const name = (t) => chordName(readChord(t));
+  assert.equal(name("CΔ7"), "Cmaj7"); assert.equal(name("C-7"), "Cm7"); assert.equal(name("F#ø"), "F#m7b5");
+  assert.equal(name("G7(b9)"), "G7b9"); assert.equal(name("Bb7sus"), "Bb7sus4"); assert.equal(name("Em/D"), "Em/D");
+  assert.equal(name("E♭6/9"), chordName(parseChord("Eb69"))); assert.equal(name("C°7"), "Cdim7"); assert.equal(name("Dm7-5"), "Dm7b5");
+  assert.equal(readChord("Chorus"), null); assert.equal(readChord("At"), null);
+  const sets = readChordText("Intro: Fm9 | Dbmaj7 | Ebsus4 | Cm7\n\nVerse\nAm F C G Am F C G\nDm Zz7\n\nnot chords at all here");
+  assert.deepEqual(sets.map((s) => s.name), ["INTRO", "VERSE"]);
+  assert.equal(sets[0].chords.length, 4);
+  assert.deepEqual(sets[1].chords.map(chordName), ["Am", "F", "C", "G", "Dm"]);
+  assert.equal(sets[1].merged, 4);
+  assert.deepEqual(sets[1].bad, ["Zz7"]);
+});
+
+test("expand a progression: rows of the same chords, then chords that fit; only empty keys", async () => {
+  const { expandSet, EXPAND_ROWS } = await import("../harmony.js");
+  const ch = Array.from({ length: NKEYS }, () => parseChord("-"));
+  ["Am", "F", "C", "G"].forEach((t, i) => (ch[i] = parseChord(t)));
+  const k = detectKey(ch);
+  const r = expandSet(ch, k.root, k.scale);
+  assert.equal(r.chords.filter((c) => !isEmpty(c)).length, NKEYS);
+  assert.deepEqual(r.chords.slice(0, 4).map(chordName), ["Am", "F", "C", "G"]);
+  assert.deepEqual(r.chords.slice(4, 8).map(chordName), ["Am7", "Fmaj7", "Cmaj7", "Gadd9"]);   // richer, in the key
+  assert.deepEqual(r.chords.slice(16, 20).map(chordName), ["Am/E", "F/C", "C/E", "G/B"]);       // a walking bass
+  assert.equal(r.made.filter((m) => m.row === EXPAND_ROWS[0]).length, 4);
+  assert.ok(r.made.some((m) => m.row === "new"));
+  for (const c of r.chords) assert.ok(encodeSet({ ...sets[0], chords: r.chords }).length > 0 && !isEmpty(c));
+});

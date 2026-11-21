@@ -36,6 +36,12 @@ extern uint32_t _rt_text_end[] __attribute__((weak));   /* (Carnac's --dsp-ram l
 
 static void fc_lock(void) { (void)irq_save(); }
 static void fc_unlock(void) { irq_restore(0); }
+static uint32_t fc_ed_seen;                         /* an editor has talked to us: live-sync events go out */
+static void fc_wire(const uint8_t *p, uint32_t n)   /* a SysEx frame to the editor (live sync) */
+{
+    if (fc_ed_seen && usb.config)                    /* nobody listening: nothing to wait on */
+        (void)ota_wire_send(p, n);
+}
 
 #include "fc_app.c"
 
@@ -225,6 +231,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)
     uint32_t cmd = f[3], i;
     const uint8_t *a = f + 4;
     uint32_t na = n - 4u;
+    fc_ed_seen = 1;
     ed_begin(cmd);
     switch (cmd) {
     case ED_INFO:

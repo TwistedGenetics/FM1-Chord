@@ -80,6 +80,14 @@ int plat_store_save(uint32_t obj, const void *src, uint32_t len)
 }
 static void fc_lock(void) {}
 static void fc_unlock(void) {}
+static uint32_t evt_n, evt_kind;
+static void fc_wire(const uint8_t *p, uint32_t n)
+{
+    if (n >= 10u && p[4] == 48u) {
+        evt_n++;
+        evt_kind |= p[5];
+    }
+}
 #define FC_VERSION "HOST"
 
 #include "../../src/app/fc_app.c"
@@ -299,8 +307,16 @@ int main(int argc, char **argv)
                 got = (long)fc_synth_active(&fc_syn);
             else if (!strcmp(b, "dirty"))
                 got = fc_dirty;
-            else if (!strcmp(b, "midiout"))
+            else if (!strcmp(b, "events")) {        /* live-sync frames sent since the last look */
+                got = (long)evt_n;
+                evt_n = 0;
+            } else if (!strcmp(b, "eventkind")) {
+                got = (long)evt_kind;
+                evt_kind = 0;
+            } else if (!strcmp(b, "midiout"))
                 got = (long)midi_notes_on;
+            else if (!strcmp(b, "slot"))
+                got = (long)fc_save_slot;
             else if (!strcmp(b, "quality"))
                 got = fc_set.ch[fc_sel % FC_NKEYS].quality;
             else if (!strcmp(b, "root"))

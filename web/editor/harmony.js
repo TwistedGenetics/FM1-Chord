@@ -7,7 +7,7 @@
 //   RED   "Far":    far round the circle of fifths, few shared notes
 // The dark jungle / DnB bias prefers minor 9ths and 11ths, sus chords, maj7 colours and phrygian moves.
 // Copyright (C) 2026 Jamie (TwistedGenetics).
-import { QUALITIES, NOTE_NAMES, NOBASS, isEmpty, pitchClasses, chordName, isBlack, NKEYS } from "./chord.js";
+import { QUALITIES, NOTE_NAMES, NOBASS, Q_CUSTOM, isEmpty, pitchClasses, chordName, isBlack, NKEYS, tones } from "./chord.js";
 import { SCALES } from "./setcodec.js";
 
 export const SCALE_STEPS = [
@@ -193,6 +193,108 @@ export function fillSet(chords, keyRoot, scale, { bias = false, all = false, see
     if (!isBlack(k)) prev = c;
   }
   return out;
+}
+
+// ---- expand a progression (0.4) -------------------------------------------------------------------------------
+// The set's chords are the progression. The empty keys get it again, row after row, each row a different colour of
+// the same chords, so any row plays the progression: richer (extensions), sus, a new inversion in an open voicing,
+// a slash bass that walks from the chord before, then higher and spread. Keys left over after whole rows take new
+// chords that fit the progression (strong or OK suggestions, chained from its last chord). Only empty keys change.
+const RICHER = {
+  [Q.maj]: [Q.maj7, Q.add9, Q.maj9, Q["69"], Q["6"]], [Q.m]: [Q.m7, Q.m9, Q.m11, Q.m6], [Q["7"]]: [Q["9"], Q["13"], Q["7sus4"], Q["7b9"]],
+  [Q.maj7]: [Q.maj9, Q["maj7#11"], Q["69"]], [Q.m7]: [Q.m9, Q.m11, Q.m13], [Q.m9]: [Q.m11, Q.m13], [Q.m11]: [Q.m13, Q.m9],
+  [Q.maj9]: [Q["maj7#11"], Q["69"]], [Q["9"]]: [Q["13"], Q["7#9"]], [Q.dim]: [Q.m7b5, Q.dim7], [Q.m7b5]: [Q.dim7, Q.m7],
+  [Q.sus2]: [Q.add9, Q["7sus4"]], [Q.sus4]: [Q["7sus4"], Q.sus2], [Q.add9]: [Q.maj9, Q["69"]], [Q["6"]]: [Q["69"], Q.maj7],
+  [Q.m6]: [Q.m9, Q.m7], [Q["5"]]: [Q.sus2, Q.sus4], [Q.aug]: [Q["7#5"]], [Q["7sus4"]]: [Q["9"], Q["13"]],
+  [Q.mmaj7]: [Q.m9], [Q["11"]]: [Q["13"]], [Q["13"]]: [Q["9"]], [Q.dim7]: [Q.m7b5], [Q["69"]]: [Q.maj9],
+};
+const SUSSY = new Set([Q.sus2, Q.sus4, Q["7sus4"]]);
+export const EXPAND_ROWS = ["richer", "sus", "inversion", "slash bass", "high and spread"];
+
+const fits = (c, keyRoot, scale) => inScale(pitchClasses(c), keyRoot, scale);
+function firstFit(c, qs, keyRoot, scale, bias) {
+  const cands = qs.filter((q) => q !== undefined).map((q) => ({ ...c, quality: q, custom: [0, 0, 0] }));
+  return cands.find((x) => fits(x, keyRoot, scale)) ||
+    cands.find((x) => rate(x, c, keyRoot, scale, bias).tier <= 1) || null;
+}
+function variant(c, row, prev, keyRoot, scale, bias) {
+  const custom = c.quality === Q_CUSTOM;
+  const n = custom ? tones(c).length : QUALITIES[c.quality].iv.length;
+  const v = { ...c, custom: [...c.custom] };
+  switch (row) {
+    case 0: {                                        // richer: more notes
+      const r = custom ? null : firstFit(c, RICHER[c.quality] || [], keyRoot, scale, bias);
+      if (r) return { ...r, bass: c.bass };
+      v.voicing = c.voicing === 1 ? 4 : 1;
+      return v;
+    }
+    case 1: {                                        // sus: or, from a sus chord, the plain chord it hangs on
+      const qs = SUSSY.has(c.quality) ? [Q.m, Q.maj, Q.m7, Q.maj7] : [Q.sus2, Q.sus4, Q["7sus4"]];
+      const r = custom ? null : firstFit(c, qs, keyRoot, scale, bias);
+      if (r) return { ...r, bass: c.bass };
+      v.voicing = 2;
+      return v;
+    }
+    case 2:                                          // the next inversion, open
+      v.inversion = (c.inversion + 1) % Math.min(4, Math.max(2, n));
+      v.voicing = c.voicing === 0 ? 1 : 0;
+      return v;
+    case 3: {                                        // slash: the chord tone nearest the bass before it
+      const pcs = pitchClasses(c).filter((p) => p !== c.root);
+      const from = prev ? (prev.bass < 12 ? prev.bass : prev.root) : c.root;
+      const d = (p) => { const x = Math.abs(p - from) % 12; return Math.min(x, 12 - x); };
+      pcs.sort((a, b) => d(a) - d(b) || a - b);
+      if (pcs.length) v.bass = pcs[0] === from && pcs[1] !== undefined ? pcs[1] : pcs[0];
+      if (v.bass === c.bass) v.voicing = 2;
+      return v;
+    }
+    default:                                         // high and spread
+      v.octave = Math.min(2, c.octave + 1);
+      v.voicing = 4;
+      v.inversion = 0;
+      return v;
+  }
+}
+
+// returns { chords, made: [{ key, from, row }] } (row: an EXPAND_ROWS label, or "new" for a chord that fits)
+export function expandSet(chords, keyRoot, scale, { bias = false, seed = 0 } = {}) {
+  const out = chords.map((c) => ({ ...c, custom: [...c.custom] }));
+  const core = out.map((c, k) => ({ c, k })).filter((x) => !isEmpty(x.c));
+  let empty = out.map((c, k) => k).filter((k) => isEmpty(out[k]));
+  // a progression on the white keys (as pasted chords are): its rows go on the white keys above it, then the black
+  if (core.every((x) => !isBlack(x.k))) empty = [...empty.filter((k) => !isBlack(k)), ...empty.filter((k) => isBlack(k))];
+  const made = [];
+  if (!core.length || !empty.length) return { chords: out, made };
+  const n = core.length;
+  const rows = Math.min(EXPAND_ROWS.length, Math.floor(empty.length / n));
+  let j = 0;
+  for (let row = 0; row < rows; row++)
+    for (let i = 0; i < n; i++, j++) {
+      const k = empty[j], c = core[i].c, prev = core[(i + n - 1) % n].c;
+      out[k] = variant(c, row, prev, keyRoot, scale, bias);
+      made.push({ key: k, from: core[i].k, row: EXPAND_ROWS[row] });
+    }
+  // the rest: chords that fit, chained on from the progression's last chord
+  const used = new Set(out.filter((c) => !isEmpty(c)).map((c) => chordName({ ...c, bass: NOBASS })));
+  let prev = core[n - 1].c, nth = seed;
+  const roots = new Set(out.filter((c) => !isEmpty(c)).map((c) => c.root));
+  for (; j < empty.length; j++) {
+    const k = empty[j];
+    const all = suggest(prev, keyRoot, scale, { bias, max: 40, far: 0 }).filter((r) => r.tier <= 1 && !used.has(r.name));
+    const fresh = all.filter((r) => !roots.has(r.chord.root));      // new roots first: the progression's own are done
+    const fg = fresh.filter((r) => r.tier === 0), ag = all.filter((r) => r.tier === 0);   // strong ones before OK
+    const pool = fg.length ? fg : ag.length ? ag : fresh.length ? fresh : all;
+    const r = pool[nth++ % Math.max(1, Math.min(4, pool.length))];
+    if (!r) break;
+    const c = { ...r.chord, custom: [0, 0, 0] };
+    if (k >= 19 && c.root < 5) c.octave = 1;
+    out[k] = c;
+    used.add(r.name);
+    made.push({ key: k, from: -1, row: "new" });
+    roots.add(c.root);
+    prev = c;
+  }
+  return { chords: out, made };
 }
 
 export { SCALES };

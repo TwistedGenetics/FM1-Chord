@@ -19,9 +19,23 @@ along the bottom. Every page's values are on K1–K4.
 | **LFO** | latch on / off (lit when on): a chord keeps sounding after you let go; the same key again stops it |
 | **SEL** | auto voice leading on / off (lit when on) |
 | **GLO** | GLOBAL: MIDI CH (out), OUTPUT (both / synth / MIDI), CLOCK (internal / MIDI: the arpeggiator follows MIDI clock in), VELO (the keys' velocity) |
-| **SAVE** | SAVE page: PRESET or K1 picks the user slot (it says what it replaces), SAVE again saves. Any other button: not saved |
+| **SAVE** | SAVE page. On one of your user sets it first offers **OVERWRITE** (that set's slot); turn K1 (or PRESET) for **SAVE AS NEW** (each empty slot) or **REPLACE** (another of your sets, its name shown). SAVE again saves; any other button: not saved |
 | **PLAY** | all notes off (and All Notes Off on MIDI out) |
 | **SEQ** | reserved for progressions and phrases (next version) |
 
-A `*` after the set's name means it has changes that aren't saved. MIDI notes in on any channel (GLOBAL can narrow
+A `*` after the set's name means it has changes that aren't saved.
+
+**Live with the editor (0.4).** With the FM-1 connected and **Live: on** (top of the editor), whatever you open or
+change in the editor plays on the FM-1 straight away, and whatever you change on the FM-1 (PRESET, chord edits,
+octave, learn) shows in the editor. Nothing is kept on the FM-1 until you press SAVE there (OVERWRITE or SAVE AS
+NEW), or send a set to a slot from the editor's FM-1 tab.
+
+**Paste chords (editor, 0.4).** *Paste chords* reads chord sets from text (a note, a chart, a forum post): one set per
+line or paragraph, `Name: chords` or a name line above them. Each set's chords go on the white keys from F3; with
+*Fill the other keys* on, the rest of the keys get the same progression again (richer, sus, a new inversion, a
+walking slash bass, higher and spread) and then chords that fit. It lists anything it couldn't read, then offers to
+save the sets in My sets, and to the FM-1's empty user slots (nothing there is replaced).
+
+**Expand my progression (editor, Suggestions tab).** The same fill for the set that is open: your chords stay, the
+empty keys get them again as rows, then fitting chords. MIDI notes in on any channel (GLOBAL can narrow
 it later) play the keys: F3 is key 1.

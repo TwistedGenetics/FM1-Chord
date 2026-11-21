@@ -8,11 +8,13 @@ import {
 import {
   loadPresets, newSet, cloneSet, encodeSet, setToFile, setFromFile, WAVES, MODES, RATES, STRUM_DIRS, ARP_DIRS,
 } from "./setcodec.js";
-import { suggest, suggestNext, fillSet, detectKey, roman, keyLabel, SCALE_LABELS, TIERS } from "./harmony.js";
+import { suggest, suggestNext, fillSet, expandSet, detectKey, roman, keyLabel, SCALE_LABELS, TIERS } from "./harmony.js";
+import { readChordText } from "./chordtext.js";
 import { PHRASES, render as renderProg, toMidiFile } from "./progression.js";
 import { Preview } from "./audio.js";
 import { Device, midiAccess, WORKING, FACTORY0, NUSER } from "./device.js";
 import { mockFM1 } from "./mock-fm1.js";
+import { LiveSync, EVT } from "./live.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -27,6 +29,7 @@ const st = {
 };
 const preview = new Preview();
 const dev = new Device();
+const live = new LiveSync(dev);
 let mock = null, access = null;
 
 // ------------------------------------------------------------------------------------------------ library ---
@@ -45,7 +48,12 @@ function libLabel() {
   const g2 = document.createElement("optgroup"); g2.label = "My sets (this device)";
   st.mine.forEach((s, i) => g2.append(new Option(s.name || `SET ${i + 1}`, `m${i}`)));
   sel.append(g1); if (gj.children.length) sel.append(gj); if (st.mine.length) sel.append(g2);
-  sel.value = (st.cur.kind === "factory" ? "f" : "m") + st.cur.i;
+  if (st.cur.kind === "fm1") {                     // a user set the FM-1 is playing (live sync)
+    const g3 = document.createElement("optgroup"); g3.label = "On the FM-1";
+    g3.append(new Option(`U${st.cur.i + 1} ${st.set.name}`, `d${st.cur.i}`));
+    sel.append(g3);
+  }
+  sel.value = st.cur.kind === "fm1" ? `d${st.cur.i}` : (st.cur.kind === "factory" ? "f" : "m") + st.cur.i;
 }
 function openSet(kind, i) {
   if (st.dirty && !confirm("This set has changes that aren't saved. Open another anyway?")) { libLabel(); return; }
@@ -55,9 +63,36 @@ function openSet(kind, i) {
   if (st.sel >= NKEYS) st.sel = 0;
   stopProg();
   pushSet();
+  live.open(st.set, kind === "factory" ? FACTORY0 + i : -1);
   renderAll();
 }
-function markDirty() { st.dirty = true; $("#b-save").textContent = "Save *"; pushSet(); }
+function markDirty() { st.dirty = true; $("#b-save").textContent = "Save *"; pushSet(); live.edit(st.set); }
+
+// ---- live sync: the FM-1's panel changed its set; show it here, without sending it back ----
+function sameSet(a, b) { const x = encodeSet(a), y = encodeSet(b); return x.every((v, j) => v === y[j]); }
+function fromFM1({ kind, cur, set }) {
+  if (!set) return;
+  if (kind & EVT.SAVED) {
+    st.cur = { kind: "fm1", i: cur }; st.dirty = false;
+    toast(`Saved on the FM-1: user set ${cur + 1}`);
+  } else if (kind & EVT.LOADED) {
+    const f = cur - FACTORY0;
+    if (f >= 0 && st.factory[f] && sameSet(st.factory[f], set)) { st.cur = { kind: "factory", i: f }; st.dirty = false; }
+    else if (cur < NUSER) { st.cur = { kind: "fm1", i: cur }; st.dirty = false; }
+    else st.dirty = true;
+    if (kind & EVT.EDITED) st.dirty = true;
+  } else st.dirty = true;                          // edited on the FM-1
+  st.set = cloneSet(set);
+  stopProg();
+  pushSet();
+  renderAll();
+}
+function liveLabel() {
+  const b = $("#b-live");
+  b.classList.toggle("on", live.active);
+  b.setAttribute("aria-pressed", String(live.on));
+  b.textContent = !dev.connected ? "Live: no FM-1" : live.on ? "Live: on" : "Live: off";
+}
 function pushSet() { preview.post({ type: "set", set: st.set }); }
 
 // ----------------------------------------------------------------------------------------------- the keys ---
@@ -324,6 +359,7 @@ function panelHarmony(p) {
     </div>
     <div class="sugbar">
       <button id="h-next" class="primary">Suggest next chord</button>
+      <button id="h-expand" class="primary">Expand my progression</button>
       <button id="h-fill">Fill the empty keys</button>
       <button id="h-fillall">Refill every key</button>
       <span class="hint">Suggestions for <b>${isEmpty(sel) ? `the key of ${esc(keyLabel(root, scale))}` : esc(chordName(sel))}</b> on key ${st.sel + 1}. Tap ▶ to hear one, then put it on a key.</span>
@@ -368,8 +404,102 @@ function panelHarmony(p) {
     st.set.chords = fillSet(st.set.chords, root, scale, { bias: st.bias, all, seed: st.pickNth++ });
     markDirty(); renderKeys(); renderPanel(); toast(all ? "Every key refilled" : "Empty keys filled");
   };
+  $("#h-expand").onclick = () => {
+    const n = st.set.chords.filter((c) => !isEmpty(c)).length;
+    if (!n) return toast("Put your progression on some keys first (or paste chords: the Paste chords button)");
+    const k = st.keyAuto ? detectKey(st.set.chords) : { root, scale };
+    const r = expandSet(st.set.chords, k.root, k.scale, { bias: st.bias, seed: st.pickNth++ });
+    if (!r.made.length) return toast("No empty keys to fill");
+    st.set.chords = r.chords;
+    markDirty(); renderKeys(); renderPanel();
+    toast(expandSummary(r.made, n));
+  };
   $("#h-fill").onclick = () => fill(false);
   $("#h-fillall").onclick = () => fill(true);
+}
+
+function expandSummary(made, n) {
+  const rows = [...new Set(made.filter((m) => m.row !== "new").map((m) => m.row))];
+  const fresh = made.filter((m) => m.row === "new").length;
+  return `Your ${n} chords, again as: ${rows.join(", ") || "-"}${fresh ? `, plus ${fresh} new chords that fit` : ""}`;
+}
+
+// ---- paste chords: chord sets from text (0.4) ----
+function importedSet(r, expand) {
+  const s = newSet(r.name);
+  s.sound = { ...st.set.sound }; s.play = { ...st.set.play }; s.tempo = st.set.tempo;
+  const whites = [...Array(NKEYS).keys()].filter((k) => !isBlack(k));
+  const keys = r.chords.length <= whites.length ? whites : [...Array(NKEYS).keys()];   // white keys from F3
+  r.chords.forEach((c, i) => { if (i < keys.length) s.chords[keys[i]] = { ...c, custom: [...c.custom] }; });
+  const k = detectKey(s.chords);
+  s.keyRoot = k.root; s.keyScale = k.scale;
+  if (expand) s.chords = expandSet(s.chords, k.root, k.scale, { bias: st.bias }).chords;
+  return s;
+}
+function pasteDialog() {
+  const d = $("#imp");
+  let found = [];
+  const step1 = () => {
+    d.innerHTML = `<form method="dialog" class="imp">
+      <h2>Paste chords</h2>
+      <p class="hint">Chords as you'd write them: <b>Am F C G</b>, <b>Fm9 | Dbmaj7 | Ebsus4</b>, <b>CΔ7 F#ø B7(b9)</b>. Give a set a name with <b>Name: chords</b> or a line of its own above them; a blank line starts the next set.</p>
+      <textarea id="imp-text" rows="9" spellcheck="false" autocapitalize="off" placeholder="Verse: Am7 Dm7 G7 Cmaj7&#10;&#10;Chorus&#10;F C/E Dm Bb">${esc(pasteDialog.text || "")}</textarea>
+      <div class="row">
+        <button type="button" id="imp-file">Open a text file</button>
+        <input type="file" id="imp-f" accept=".txt,.text,.md,text/plain" hidden>
+        <label class="chk"><input type="checkbox" id="imp-exp" ${pasteDialog.expand !== false ? "checked" : ""}> Fill the other keys from each progression (richer, sus, inversions, slash basses, chords that fit)</label>
+      </div>
+      <div class="row end"><button value="cancel">Cancel</button><button type="button" id="imp-read" class="primary">Read chords</button></div>
+    </form>`;
+    $("#imp-file").onclick = () => $("#imp-f").click();
+    $("#imp-f").onchange = async (e) => { const f = e.target.files[0]; if (f) $("#imp-text").value = await f.text(); };
+    $("#imp-read").onclick = () => {
+      pasteDialog.text = $("#imp-text").value; pasteDialog.expand = $("#imp-exp").checked;
+      found = readChordText(pasteDialog.text);
+      if (!found.some((r) => r.chords.length)) { toast("No chords found in that text"); return; }
+      step2();
+    };
+  };
+  const step2 = async () => {
+    const ok = found.filter((r) => r.chords.length);
+    let free = [];
+    if (dev.connected) { try { free = (await dev.names()).filter((n) => !n.used).map((n) => n.slot); } catch { free = []; } }
+    const toFM1 = Math.min(free.length, ok.length);
+    d.innerHTML = `<form method="dialog" class="imp">
+      <h2>${ok.length} chord set${ok.length > 1 ? "s" : ""} found</h2>
+      <ul class="implist">${found.map((r) => `<li><b>${esc(r.name)}</b> · ${r.chords.length} chord${r.chords.length === 1 ? "" : "s"}
+        <div>${r.chords.map((c) => esc(chordName(c))).join("  ")}</div>
+        ${r.bad.length ? `<div class="bad">Couldn't read: ${r.bad.map(esc).join("  ")}</div>` : ""}
+        ${r.merged ? `<div class="hint">${r.merged} repeat${r.merged > 1 ? "s" : ""} merged: each chord gets one key</div>` : ""}</li>`).join("")}</ul>
+      <p class="hint">${pasteDialog.expand ? "The other keys get filled from each progression." : "Only these chords go on keys (white keys from the bottom)."}</p>
+      ${dev.connected ? `<p><b>Save these to the FM-1 as new user sets?</b> ${free.length ? `It has ${free.length} empty slot${free.length > 1 ? "s" : ""}${toFM1 < ok.length ? `: the first ${toFM1} go there` : ""}. Nothing on it is replaced.` : "It has no empty user slots: they go to My sets only."}</p>` :
+        `<p class="hint">Connect the FM-1 (FM-1 tab) to save them there too.</p>`}
+      <div class="row end"><button type="button" id="imp-back">Back</button>
+        <button type="button" id="imp-mine">Save to My sets</button>
+        ${toFM1 ? `<button type="button" id="imp-fm1" class="primary">Save to My sets and the FM-1</button>` : ""}</div>
+    </form>`;
+    $("#imp-back").onclick = step1;
+    const save = async (fm1) => {
+      const sets = ok.map((r) => importedSet(r, pasteDialog.expand));
+      const first = st.mine.length;
+      st.mine.push(...sets.map(cloneSet)); saveMine();
+      let sent = 0;
+      if (fm1) {
+        for (let i = 0; i < toFM1; i++) {
+          try { await dev.putSet(free[i], sets[i]); sent++; } catch (e) { toast(e.message); break; }
+        }
+      }
+      d.close();
+      st.dirty = false;
+      openSet("mine", first);
+      toast(`${sets.length} set${sets.length > 1 ? "s" : ""} saved in My sets${fm1 ? `, ${sent} on the FM-1 (user ${free.slice(0, sent).map((x) => x + 1).join(", ")})` : ""}`);
+    };
+    $("#imp-mine").onclick = () => save(false);
+    if ($("#imp-fm1")) $("#imp-fm1").onclick = () => save(true);
+  };
+  if (st.dirty && !confirm("This set has changes that aren't saved. Paste chords anyway? (The new sets open after.)")) return;
+  step1();
+  d.showModal();
 }
 
 // ---- sound ----
@@ -578,10 +708,21 @@ async function connectFM1() {
     const info = await dev.connect(access);
     status(`${DEMO ? "Demo: a simulated FM-1" : "Connected"}: ${info.name}`, "ok");
     hookMidiIn();
+    await liveStart();
   } catch (e) {
     status(e.message, "bad");
   }
   renderPanel();
+}
+// on connecting: unsaved work here goes to the FM-1; otherwise the editor shows what the FM-1 is playing
+async function liveStart() {
+  liveLabel();
+  if (!live.active) return;
+  if (st.dirty) { live.edit(st.set); return; }
+  try {
+    const set = await dev.getSet(WORKING);
+    if (set) fromFM1({ kind: EVT.LOADED | (dev.info.flags ? EVT.EDITED : 0), cur: dev.info.cur, set });
+  } catch (e) { toast(e.message); }
 }
 function hookMidiIn() {               // a MIDI keyboard (not the FM-1) plays the learn keys and the chord keys
   if (!access || DEMO) return;
@@ -605,6 +746,7 @@ async function panelDevice(p) {
       ${c ? '<button id="d-disc">Disconnect</button>' : ""}
       <button id="d-aud" class="${st.audition ? "on" : ""}" aria-pressed="${!!st.audition}">Keys here play the FM-1 too</button>
     </div>
+    <p class="hint">${live.on ? "<b>Live is on:</b> every change here plays on the FM-1 straight away, and the FM-1's own changes show here. Press SAVE on the FM-1 to keep a set there (it asks: overwrite, or save as new)." : "<b>Live is off:</b> use the buttons below to send sets."}</p>
     ${c ? `<p><b>${esc(dev.info.name)}</b> · ${dev.info.nfactory} factory sets, ${dev.info.nuser} user slots · playing ${dev.info.cur >= FACTORY0 ? `factory set ${dev.info.cur - FACTORY0 + 1}` : `user set ${dev.info.cur + 1}`}</p>
       <div class="row"><button id="d-work">Play this set on the FM-1 now (not saved there)</button></div>
       <h3>User sets on the FM-1</h3>
@@ -615,7 +757,7 @@ async function panelDevice(p) {
         <p>The FM-1 needs FM1-Chord installed: <a href="../flasher/">firmware flasher</a>.</p></div>
       <div class="callout warn" style="margin-top:10px"><b>Bricked FM-1?</b> A black screen with no USB after an update was cut off needs the chip-level route: see the <a href="https://github.com/TwistedGenetics/FM1-Chord/blob/main/docs/RECOVERY.md" target="_blank" rel="noopener">recovery guide</a>. Until then, everything here works without the FM-1.</div>`}`;
   $("#d-conn").onclick = connectFM1;
-  if ($("#d-disc")) $("#d-disc").onclick = () => { dev.disconnect(); status("Not connected"); renderPanel(); };
+  if ($("#d-disc")) $("#d-disc").onclick = () => { dev.disconnect(); status("Not connected"); liveLabel(); renderPanel(); };
   $("#d-aud").onclick = () => { st.audition = !st.audition; renderPanel(); };
   if (!c) return;
   $("#d-work").onclick = async () => {
@@ -641,7 +783,12 @@ async function panelDevice(p) {
       } catch (e) { toast(e.message); }
     }));
     tb.querySelectorAll("[data-sel]").forEach((b) => (b.onclick = async () => {
-      try { await dev.select(+b.dataset.sel); dev.info = await dev.getInfo(); toast("Selected on the FM-1"); panelDevice(p); } catch (e) { toast(e.message); }
+      try {
+        const s = +b.dataset.sel;
+        await dev.select(s); dev.info = await dev.getInfo(); toast("Selected on the FM-1");
+        if (live.on) { const set = await dev.getSet(s); if (set) fromFM1({ kind: EVT.LOADED, cur: s, set }); }
+        else panelDevice(p);
+      } catch (e) { toast(e.message); }
     }));
   } catch (e) { toast(e.message); }
 }
@@ -672,10 +819,18 @@ function renderAll() {
   octLabel(); renderKeys(); renderPanel(); showNow(st.sel);
 }
 function bindTop() {
-  $("#lib").onchange = (e) => { const v = e.target.value; openSet(v[0] === "f" ? "factory" : "mine", +v.slice(1)); };
+  $("#lib").onchange = (e) => { const v = e.target.value; if (v[0] !== "d") openSet(v[0] === "f" ? "factory" : "mine", +v.slice(1)); };
+  $("#b-live").onclick = () => {
+    live.on = !live.on; liveLabel();
+    if (live.active) live.open(st.set, st.cur.kind === "factory" && !st.dirty ? FACTORY0 + st.cur.i : -1);
+    if (st.tab === "device") renderPanel();
+  };
+  live.onremote = fromFM1;
+  live.onerror = (e) => toast("Live sync: " + e.message);
+  dev.onchange = liveLabel;
   $("#setname").oninput = (e) => { st.set.name = e.target.value.toUpperCase().replace(/[^\x20-\x7e]/g, "").slice(0, 16); markDirty(); };
   $("#b-save").onclick = () => {
-    if (st.cur.kind === "factory") { st.mine.push(cloneSet(st.set)); st.cur = { kind: "mine", i: st.mine.length - 1 }; }
+    if (st.cur.kind !== "mine") { st.mine.push(cloneSet(st.set)); st.cur = { kind: "mine", i: st.mine.length - 1 }; }
     else st.mine[st.cur.i] = cloneSet(st.set);
     saveMine(); st.dirty = false; renderAll(); toast(`Saved "${st.set.name}" in My sets`);
   };
@@ -693,6 +848,7 @@ function bindTop() {
   };
   $("#b-export").onclick = () => download(`${(st.set.name || "set").trim().replace(/\s+/g, "-")}.chordset`, setToFile(st.set), "application/json");
   $("#b-import").onclick = () => $("#importfile").click();
+  $("#b-paste").onclick = pasteDialog;
   $("#importfile").onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     try { const s = setFromFile(await f.text()); st.mine.push(s); saveMine(); st.dirty = false; openSet("mine", st.mine.length - 1); toast(`Opened ${f.name}`); }
@@ -716,7 +872,7 @@ async function main() {
   st.set = cloneSet(st.factory[0]);
   pushSet();
   bindTop(); bindKeys(); renderAll(); soundBtn();
-  window.__fc = { mock: DEMO, st, preview, dev, encodeSet };
+  window.__fc = { mock: DEMO, st, preview, dev, live, encodeSet, get mockObj() { return mock; } };
   if (DEMO) { await connectFM1(); status("Demo: a simulated FM-1 (nothing is sent to real hardware)", "ok"); }
   else if (!navigator.requestMIDIAccess) status("No Web MIDI here: editing and sound work; the FM-1 needs Chrome / Edge or the iPad app");
 }

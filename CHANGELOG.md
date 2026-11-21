@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4
+
+- **Live sync** between the editor and the FM-1 (*Live: on* in the editor, on by default when connected). Opening
+  a set or changing anything in the editor plays it on the FM-1 at once; changing set, chords, octave or learning on
+  the FM-1 shows in the editor. The FM-1 announces its changes with a new event frame (48, docs/PROTOCOL.md).
+- **SAVE on the FM-1 asks:** OVERWRITE the user set you're on, SAVE AS NEW (an empty slot) or REPLACE another set
+  (its name shown). SAVE again commits.
+- **Expand my progression** (Suggestions tab): the set's chords stay; the empty keys get the progression again as
+  rows (richer, sus, new inversion in an open voicing, a walking slash bass, higher and spread), then new chords
+  that fit it (strong first).
+- **Paste chords:** chord sets from text, read leniently (Δ, ø, °, +, -7, M7, (b9), 6/9, slash basses, bars,
+  N.C., %); named sets, merged repeats, a list of anything it couldn't read; each set expanded to all 27 keys if
+  you want; then saved to My sets and, if you say so, to the FM-1's empty user slots.
+
 ## 0.3
 
 - **The Roland J-6's 100 chord sets** as factory sets **J6 01 POP … J6 100 MODERN** (named after the manual's

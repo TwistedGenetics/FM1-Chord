@@ -3,7 +3,7 @@
  * Included by fc_app.c (its statics). web/editor/device.js asks; web/editor/mock-fm1.js answers the same way in the
  * demo. Copyright (C) 2026 Jamie (TwistedGenetics). */
 enum { FC_ED_INFO = 40, FC_ED_SET_GET, FC_ED_SET_PUT, FC_ED_NAMES, FC_ED_SELECT, FC_ED_KEY, FC_ED_GLOB_GET,
-       FC_ED_GLOB_PUT };
+       FC_ED_GLOB_PUT, FC_ED_EVT /* 48: sent by the FM-1 (live sync), never asked for */ };
 #define FC_ED_WORKING 127u
 #define FC_ED_PROTO 2u               /* 2 (0.3): set numbers are two bytes, hi lo (factory sets from 128) */
 
@@ -95,14 +95,23 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
             }
         }
         if (s == FC_ED_WORKING || s == fc_g.cur_set) {   /* the keys play it now */
+            uint32_t same = 1;
+            for (i = 64; i < FC_SET_BYTES; i++)  /* the chords as they were: notes keep sounding (live editing) */
+                if (((const uint8_t *)&t)[i] != ((const uint8_t *)&fc_set)[i])
+                    same = 0;
             fc_lock();
-            fc_player_stop(&fc_pl);
-            fc_synth_all_off(&fc_syn);
+            if (!same || t.play.mode != fc_set.play.mode || t.play.octave != fc_set.play.octave ||
+                t.play.transpose != fc_set.play.transpose) {
+                fc_player_release(&fc_pl);
+                fc_synth_all_off(&fc_syn);
+            }
             fc_set = t;
             fc_synth_sound(&fc_syn, &fc_set.sound);
             fc_unlock();
             fc_dirty = s == FC_ED_WORKING;
         }
+        fc_rev_sent = fc_rev;                    /* the editor's own change: not announced back to it */
+        fc_rev_kind = 0;
         fc_touch();
         put(0);
         return 1;
@@ -124,6 +133,8 @@ int fc_ed_cmd(uint32_t cmd, const uint8_t *a, uint32_t na, void (*put)(uint32_t)
             put(1);
             return 1;
         }
+        fc_rev_sent = fc_rev;                    /* the editor's own change: not announced back to it */
+        fc_rev_kind = 0;
         fc_globals_save();
         put(0);
         return 1;

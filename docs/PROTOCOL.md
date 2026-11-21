@@ -21,6 +21,12 @@ Set numbers: `0`–`19` user sets (in flash), `127` the **working** set (what th
 | 45 | KEY | key 0–26, velocity (0 = up) | none: plays the key as if pressed (the editor's audition) |
 | 46 | GLOBALS_GET | — | the 16-byte settings packed |
 | 47 | GLOBALS_PUT | the 16-byte settings packed | rc |
+| 48 | EVT (0.4, **sent by the FM-1**) | — never asked for | what changed (bits: 1 loaded a set, 2 edited, 4 saved), current set (2 bytes), working set changed (0/1) |
+
+**Live sync (0.4).** The FM-1 sends EVT (at most every 120 ms) when its own panel loads, edits or saves a set; the
+editor answers by reading INFO and the working set (41, `00 7F`). Changes the editor makes (42, 44) are not
+announced back. A SET_PUT to the working set that keeps the chords as they were (only the sound or the name
+changed) doesn't stop notes that are sounding.
 
 Commands 42 and 47 are "long" frames (over 64 bytes): the firmware handles them in place in the receive buffer
 (640 bytes). The flasher's own frames (M-UPGRADE) are not editor frames and go to the update code as in every

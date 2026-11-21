@@ -69,6 +69,28 @@ reboot
 expect set 0
 expect sel 3
 expect quality 0
+# live sync: panel changes are announced to the editor (frame 48), at most every 120 ms
+wait 200
+expect events >0
+expect eventkind >0
+tap OCT+
+tap OCT-
+wait 200
+expect events 1
+# SAVE on a user set: OVERWRITE? first, turning offers SAVE AS NEW (the next empty slot)
+tap SAVE
+expect page 9
+expect slot 0
+shot overwrite.ppm
+turn K1 1
+expect slot 1
+shot saveasnew.ppm
+turn K1 -1
+tap SAVE
+expect set 0
+expect page 0
+wait 200
+expect eventkind >3
 # PRESET: the next set (user 1 is the last; round to the first factory set)
 turn PRESET 1
 expect set 128
@@ -129,9 +151,14 @@ sysex 2B
 expect reply.0 20
 expect reply.1 1
 expect replylen 341
+wait 200
+expect events >-1
 sysex 2C 01 03
 expect reply.2 0
 expect set 131
+# the editor's own changes are not echoed back
+wait 200
+expect events 0
 sysex 2C 00 13
 expect reply.2 1
 tap PLAY

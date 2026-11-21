@@ -48,6 +48,18 @@ static int32_t fc_knob_hit = -1;                 /* the knob turned last (its va
 static uint32_t fc_knob_until;
 static uint32_t fc_aud_key = 0xFFu, fc_aud_until;
 static uint32_t fc_save_slot;
+/* SAVE's choices: 0x80 | slot overwrite the set's own slot, slot a new (empty) slot, 0x40 | slot replace another */
+static uint8_t fc_sv[FC_NUSER + 1u];
+static uint32_t fc_sv_n, fc_sv_i;
+/* live sync: changes to the set made here are announced to the editor (FC_EVT), ~120 ms after they settle */
+enum { FC_CH_LOADED = 1, FC_CH_EDITED = 2, FC_CH_SAVED = 4 };
+static uint32_t fc_rev, fc_rev_sent, fc_rev_ms, fc_rev_kind;
+static void fc_changed(uint32_t kind)
+{
+    fc_rev++;
+    fc_rev_ms = plat_ms();
+    fc_rev_kind |= kind;
+}
 /* learn */
 static uint8_t fc_ln_notes[16];
 static uint32_t fc_ln_n, fc_ln_held;
@@ -141,6 +153,7 @@ static int fc_load_set(uint32_t idx)
     fc_unlock();
     fc_g.cur_set = (uint8_t)idx;
     fc_dirty = 0;
+    fc_changed(FC_CH_LOADED);
     fc_touch();
     return 0;
 }
@@ -268,7 +281,7 @@ static void fc_ptext(uint32_t p, char *b)
     case P_OUT: fc_cpy(b, fc_g.output == 0 ? "BOTH" : fc_g.output == 1 ? "SYNTH" : "MIDI"); break;
     case P_CLK: fc_cpy(b, fc_g.clock ? "MIDI" : "INT"); break;
     case P_VEL: fc_num(b, fc_g.velocity, 0); break;
-    case P_SLOT: fc_cpy(b, "USER "); fc_num(b + 5, fc_save_slot + 1, 0); break;
+    case P_SLOT: fc_cpy(b, "U"); fc_num(b + 1, (int32_t)fc_save_slot + 1, 0); break;
     default: break;
     }
 }
@@ -360,7 +373,11 @@ static void fc_pturn(uint32_t p, int32_t d)
     case P_OUT: fc_g.output = (uint8_t)lim32(fc_g.output + d, 0, 2); fc_touch(); return;
     case P_CLK: fc_g.clock = (uint8_t)lim32(fc_g.clock + d, 0, 1); fc_touch(); return;
     case P_VEL: fc_g.velocity = (uint8_t)lim32(fc_g.velocity + d2, 1, 127); fc_touch(); return;
-    case P_SLOT: fc_save_slot = (uint32_t)lim32((int32_t)fc_save_slot + d, 0, FC_NUSER - 1); fc_touch(); return;
+    case P_SLOT:
+        fc_sv_i = (uint32_t)lim32((int32_t)fc_sv_i + d, 0, (int32_t)fc_sv_n - 1);
+        fc_save_slot = fc_sv[fc_sv_i] & 0x3Fu;
+        fc_touch();
+        return;
     default: return;
     }
     if (v8) {
@@ -373,6 +390,7 @@ static void fc_pturn(uint32_t p, int32_t d)
         fc_unlock();
     }
     fc_dirty = 1;
+    fc_changed(FC_CH_EDITED);
     fc_touch();
     if (chord)
         fc_audition();
@@ -408,6 +426,7 @@ static void fc_learn_key(uint32_t k, int down)
             c.octave = (int8_t)lim32(o, -2, 2);
             fc_set.ch[fc_sel % FC_NKEYS] = c;
             fc_dirty = 1;
+            fc_changed(FC_CH_EDITED);
             fc_flash("LEARNT");
         }
         fc_ln_n = 0;
@@ -446,17 +465,20 @@ static void fc_button(uint32_t b)
             fc_unlock();
         }
         fc_dirty = 1;
+        fc_changed(FC_CH_EDITED);
         fc_flash(fc_set.play.latch ? "LATCH ON" : "LATCH OFF");
         break;
     case B_SEL:
         fc_set.play.voice_lead ^= 1u;
         fc_dirty = 1;
+        fc_changed(FC_CH_EDITED);
         fc_flash(fc_set.play.voice_lead ? "VOICE LEAD ON" : "VOICE LEAD OFF");
         break;
     case B_OCTDN:
     case B_OCTUP:
         fc_set.play.octave = (int8_t)lim32(fc_set.play.octave + (b == B_OCTUP ? 1 : -1), -3, 3);
         fc_dirty = 1;
+        fc_changed(FC_CH_EDITED);
         fc_touch();
         break;
     case B_REC: fc_go(fc_page == PG_LEARN ? PG_EDIT : PG_LEARN); break;
@@ -466,16 +488,20 @@ static void fc_button(uint32_t b)
         break;
     case B_SEQ: fc_flash("PHRASES: NEXT VERSION"); break;
     case B_SAVE:
-        if (fc_page != PG_SAVE) {
-            fc_save_slot = fc_g.cur_set < FC_NUSER ? fc_g.cur_set : 0u;
-            if (fc_g.cur_set >= FC_FACTORY0) {   /* from a factory set: the first empty slot */
-                uint32_t i;
-                for (i = 0; i < FC_NUSER; i++)
-                    if (!fc_user_used(i)) {
-                        fc_save_slot = i;
-                        break;
-                    }
-            }
+        if (fc_page != PG_SAVE) {                /* the choices: overwrite this set's slot, a new one, or replace */
+            uint32_t i;
+            fc_sv_n = 0;
+            if (fc_g.cur_set < FC_NUSER)
+                fc_sv[fc_sv_n++] = (uint8_t)(0x80u | fc_g.cur_set);
+            for (i = 0; i < FC_NUSER; i++)
+                if (!fc_user_used(i))
+                    fc_sv[fc_sv_n++] = (uint8_t)i;
+            for (i = 0; i < FC_NUSER; i++)
+                if (fc_user_used(i) && i != fc_g.cur_set)
+                    fc_sv[fc_sv_n++] = (uint8_t)(0x40u | i);
+            fc_sv_i = 0;
+            fc_save_slot = fc_sv[0] & 0x3Fu;
+            fc_msg[0] = 0;
             fc_go(PG_SAVE);
         } else {
             fc_app_panic();
@@ -483,6 +509,7 @@ static void fc_button(uint32_t b)
                 fc_g.cur_set = (uint8_t)fc_save_slot;
                 fc_dirty = 0;
                 fc_globals_save();
+                fc_changed(FC_CH_SAVED);
                 fc_go(PG_PLAY);
                 fc_flash("SAVED");
             } else
@@ -572,6 +599,16 @@ void fc_app_input(void)
     }
     if (fc_clock_seen && now - fc_clock_ms > 500u)
         fc_clock_seen = 0;
+    if (fc_rev != fc_rev_sent && now - fc_rev_ms >= 120u) {   /* tell the editor (live sync): F0 7D 46 4C 48 ... */
+        uint8_t ev[10] = {0xF0, 0x7D, 0x46, 0x4C, 48, 0, 0, 0, 0, 0xF7};
+        ev[5] = (uint8_t)(fc_rev_kind & 0x7Fu);
+        ev[6] = (uint8_t)(fc_g.cur_set >> 7);
+        ev[7] = (uint8_t)(fc_g.cur_set & 0x7Fu);
+        ev[8] = fc_dirty;
+        fc_wire(ev, sizeof ev);
+        fc_rev_sent = fc_rev;
+        fc_rev_kind = 0;
+    }
     {   /* the lights: keys with a chord dim, the sounding one bright; LATCH, V.LEAD, OCT, the page's button */
         uint32_t lit = 0, kl = 0;
         if (fc_page == PG_LEARN)
@@ -615,7 +652,7 @@ static void fc_center(int32_t y, const felucca_font_t *f, const char *s, uint16_
 
 void fc_app_draw(int force)
 {
-    char name[24], b[32], b2[32];
+    char name[24], b[32];
     const fc_chord_t *c;
     uint32_t i, k, show;
     int32_t y;
@@ -647,10 +684,11 @@ void fc_app_draw(int force)
             fc_center(72, text_w(&FONT_XL, b) <= 232 ? &FONT_XL : &FONT_B, b, FC_INK);
         } else
             fc_center(78, &FONT_B, "THEN LET GO", FC_SOFT);
-    } else if (fc_page == PG_SAVE) {
-        fc_center(40, &FONT_M, "SAVE TO", FC_INK);
+    } else if (fc_page == PG_SAVE) {             /* OVERWRITE? / SAVE AS NEW / REPLACE?, then the slot, big */
+        uint32_t e = fc_sv_n ? fc_sv[fc_sv_i] : 0u;
+        fc_center(38, &FONT_M, e & 0x80u ? "OVERWRITE" : e & 0x40u ? "REPLACE" : "SAVE AS NEW", FC_INK);
         fc_ptext(P_SLOT, b);
-        fc_center(70, &FONT_XL, b, FC_INK);
+        fc_center(66, &FONT_XL, b, FC_INK);
     } else {
         fc_chord_name(c, b, sizeof b);
         if (!b[0])
@@ -684,11 +722,9 @@ void fc_app_draw(int force)
             for (i = 0; i < 16u && t.name[i]; i++)
                 b[i] = t.name[i];
             b[i] = 0;
-            fc_cpy(b2, "REPLACES ");
-            fc_center(6, &FONT_B, b2, FC_SOFT);
-            fc_center(26, &FONT_B, b, FC_INK);
+            fc_center(5, &FONT_M, b, FC_INK);            /* what is there now */
         } else
-            fc_center(6, &FONT_B, "EMPTY SLOT", FC_SOFT);
+            fc_center(5, &FONT_M, "EMPTY SLOT", FC_SOFT);
     } else if (c->quality == FC_EMPTY) {
         fc_cpy(b, "KEY ");
         fc_num(b + 4, (int32_t)show + 1, 0);
@@ -730,7 +766,9 @@ void fc_app_draw(int force)
         fc_cpy(b + k, "  VL");
         k += 4;
     }
-    fc_center(36, &FONT_M, b, FC_INK);
+    if (fc_page == PG_SAVE)                      /* the octave line is no use here: how to answer instead */
+        fc_cpy(b, fc_sv_n > 1u ? "SAVE YES  K1 OTHER" : "PRESS SAVE");
+    fc_center(36, &FONT_M, b, fc_page == PG_SAVE ? FC_SOFT : FC_INK);
     cv_rect(0, 64, 240, 2, FC_LINE);
     for (i = 0; i < 4u; i++) {
         uint32_t p = FC_PAGE_P[fc_page][i];

@@ -41,7 +41,9 @@ C: C°, C#: Db, D#: Ebm); the other keys hold colour chords (slash, sus, borrowe
 the FM-1's own synth and player in JavaScript (checked note for note against the firmware's C); **suggestions**
 coloured **green "Strong"** (in the key, a common move, shared notes), **amber "OK"** (borrowed, secondary dominants,
 modal mixture, the phrygian ♭II) and **red "Far"** (far round the circle of fifths), each with its reasons; key and
-scale set by hand or detected; **suggest next chord** and **fill the set**, with a **dark jungle / DnB bias** (minor
+scale set by hand or detected; **suggest next chord**, **fill the set**, **expand my progression** (rows of richer,
+sus, inverted and slash versions of your chords, then chords that fit), **paste chords** from text, **live sync** with
+the FM-1, with a **dark jungle / DnB bias** (minor
 9ths and 11ths, sus chords, phrygian moves); progressions recorded from the keys with twelve J-6-style rhythm phrases,
 exported as a MIDI file; sets saved in the browser, as `.chordset` files and on the FM-1.
 

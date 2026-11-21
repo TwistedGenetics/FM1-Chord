@@ -53,7 +53,14 @@ export function mockFM1(factorySets, { name = "FM1-Chord FM-1", version = "0.1 D
       default: break;                                // KEY and unknown: no reply
     }
   };
+  // the simulated panel (tests, demo): what the FM-1 does when its knobs and SAVE are used, with the event frame
+  const event = (kind) => reply(48, [kind, cur >> 7, cur & 127, kind & 4 ? 0 : 1]);
+  const panel = {
+    load(s) { const b = s >= 128 ? encodeSet(factorySets[s - 128]) : user[s]; if (b) { working = b; cur = s; event(1); } },
+    edit(fn) { const set = decodeSet(working); fn(set); working = encodeSet(set); event(2); },
+    save(slot) { user[slot] = working; cur = slot; event(4); },
+  };
   const output = { id: "mock-out", name, manufacturer: "M-VAVE", state: "connected", type: "output", send: (d) => handle(Uint8Array.from(d)) };
   const access = { inputs: new Map([["mock-in", input]]), outputs: new Map([["mock-out", output]]), onstatechange: null, sysexEnabled: true };
-  return { access, user, get working() { return decodeSet(working); } };
+  return { access, user, panel, get cur() { return cur; }, get working() { return decodeSet(working); } };
 }
