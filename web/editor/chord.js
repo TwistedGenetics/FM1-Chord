@@ -100,10 +100,12 @@ export function chordNotes(c, shift = 0) {
   const inv = Math.min(c.inversion, n - 1);
   for (let i = 0; i < inv; i++) { t[0] += 12; t.sort(asc); }
   voice(t, c.voicing);
-  const base = 48 + (c.root % 12) + 12 * c.octave + shift;
+  const base = 48 + (c.root % 12) + 12 * c.octave;
   for (let i = 0; i < n; i++) t[i] += base;
-  const s = clampShift(24, 108, t);
-  for (let i = 0; i < n; i++) t[i] += s;
+  const s = clampShift(24, 108, t);                 // the chord itself in C1..C8
+  for (let i = 0; i < n; i++) t[i] += s + shift;   // then the set's octave and transpose: they always move it
+  const s2 = clampShift(12, 120, t);                // only as far as C0..C9
+  for (let i = 0; i < n; i++) t[i] += s2;
   const out = [];
   if (c.bass < 12) {
     let b = t[0] - ((((t[0] - c.bass) % 12) + 12) % 12);

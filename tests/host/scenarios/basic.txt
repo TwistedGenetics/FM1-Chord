@@ -123,6 +123,11 @@ tap LFO
 # sound pages
 tap ENV
 expect page 3
+turn K1 -20
+expect sound 0
+turn K1 3
+expect sound 3
+expect synthcut 40
 turn K2 -10
 shot sound.ppm
 tap ENV

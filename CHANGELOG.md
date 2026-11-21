@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5
+
+- **Fix: OCT− / OCT+ did nothing on sets with voice leading on** (the FM-1 and the editor): each chord was led
+  back next to the one before, undoing the octave. Voice leading now follows the set's octave and transpose.
+- **Fix: the octave stopped at the bottom on low chords** (many J6 chords, whose voicings go down to F1). A chord
+  still sits in C1–C8 on its own; the set's octave and transpose then move it as far as C0–C9.
+- **Fix: in the iPad app, picking a sound in the editor didn't change what you heard** (its preview kept the old
+  sound).
+
 ## 0.4
 
 - **Live sync** between the editor and the FM-1 (*Live: on* in the editor, on by default when connected). Opening

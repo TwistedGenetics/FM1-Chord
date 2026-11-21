@@ -297,6 +297,10 @@ int main(int argc, char **argv)
                 got = fc_pl.key;
             else if (!strcmp(b, "sel"))
                 got = (long)fc_sel;
+            else if (!strcmp(b, "sound"))
+                got = fc_set.sound.type;
+            else if (!strcmp(b, "synthcut"))
+                got = fc_syn.snd.cutoff;
             else if (!strcmp(b, "oct"))
                 got = fc_set.play.octave;
             else if (!strcmp(b, "notes")) {

@@ -26,6 +26,7 @@ typedef struct {
     uint8_t prev[FC_MAXN];          /* the last chord's upper notes, for voice leading */
     uint32_t nprev;
     int32_t prev_bass;
+    int32_t prev_shift;             /* the set's octave and transpose it was played at (they move voice leading too) */
     uint8_t vel;
     uint32_t sounding[4];           /* notes on, bit per MIDI note */
     /* strum: notes still to start, and when */

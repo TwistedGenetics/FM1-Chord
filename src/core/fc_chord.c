@@ -156,10 +156,13 @@ uint32_t fc_chord_notes(const fc_chord_t *c, int32_t shift, uint8_t *out)
         sort_i32(t, n);
     }
     voice(t, n, c->voicing);
-    base = 48 + (int32_t)(c->root % 12u) + 12 * (int32_t)c->octave + shift;
+    base = 48 + (int32_t)(c->root % 12u) + 12 * (int32_t)c->octave;
     for (i = 0; i < n; i++)
         t[i] += base;
-    s = clamp_note(24, 108, t, n);
+    s = clamp_note(24, 108, t, n);                  /* the chord itself in C1..C8 */
+    for (i = 0; i < n; i++)
+        t[i] += s + shift;                          /* then the set's octave and transpose: they always move it */
+    s = clamp_note(12, 120, t, n);                  /* only as far as C0..C9 */
     for (i = 0; i < n; i++)
         t[i] += s;
     if (c->bass < 12u) {                            /* slash bass: the bass note below the chord's lowest */

@@ -47,7 +47,8 @@ export class Preview {
         engine.process(L, R, L.length);
       };
       sp.connect(ctx.destination);
-      this.send = (m) => engine.message(m);
+      this.send = (m) => engine.message(structuredClone(m));   // a copy, as postMessage makes: edits to the
+      // set are then seen as changes (a shared object hid new sounds from the synth)
       this.kind = "ScriptProcessor";
     }
     for (const m of this.pending) this.send(m);

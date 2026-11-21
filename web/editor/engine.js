@@ -189,7 +189,7 @@ const RATE_TICKS = [24, 12, 8, 6, 4, 3];
 export class Player {
   constructor(out, rate = FS) {
     this.out = out; this.rate = rate;
-    this.key = -1; this.held = 0; this.notes = []; this.hasBass = 0; this.prev = []; this.prevBass = -1; this.vel = 100;
+    this.key = -1; this.held = 0; this.notes = []; this.hasBass = 0; this.prev = []; this.prevBass = -1; this.prevShift = 0; this.vel = 100;
     this.sounding = new Set(); this.strum = []; this.stAlt = 0;
     this.arp = []; this.arpI = 0; this.arpUp = 1; this.arpNote = -1; this.arpPhase = 0; this.arpTicks = 0;
     this.now = 0; this.rng = 0x2545f491; this.chordCount = 0;
@@ -208,7 +208,10 @@ export class Player {
     const c = s.chords[key];
     let notes = chordNotes(c, s.play.transpose + 12 * s.play.octave);
     const hb = notes.length && c.bass < 12 ? 1 : 0;
-    if (notes.length && s.play.voice_lead && this.prev.length) notes = voiceLead(this.prev, this.prevBass, notes, hb);
+    if (notes.length && s.play.voice_lead && this.prev.length) {   // led from the last chord at today's octave
+      const d = s.play.transpose + 12 * s.play.octave - this.prevShift, cl = (v) => Math.max(0, Math.min(127, v));
+      notes = voiceLead(this.prev.map((v) => cl(v + d)), this.prevBass >= 0 ? cl(this.prevBass + d) : -1, notes, hb);
+    }
     return { notes, hasBass: hb };
   }
   start(s, key, vel) {
@@ -218,6 +221,7 @@ export class Player {
     if (!notes.length) return;
     this.chordCount++;
     this.prev = notes.slice(hasBass); this.prevBass = hasBass ? notes[0] : -1;
+    this.prevShift = s.play.transpose + 12 * s.play.octave;
     if (s.play.mode === 2) {
       const oct = s.play.arp_oct || 1;
       this.arp = [];

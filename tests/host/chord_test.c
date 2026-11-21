@@ -232,15 +232,15 @@ int main(int argc, char **argv)
     c.custom[1] = 0x40;
     c.custom[2] = 0x02;
     EXPECT(c, 0, 48, 51, 55, 62, 65);
-    /* range: very high chords come down an octave, very low go up */
+    /* range: a chord sits in C1..C8 on its own; the set's octave and transpose then move it as far as C0..C9 */
     c = mk(11, FC_Q_13, 0, FC_V_OPEN, FC_NOBASS, 2);
     {
         uint8_t t[FC_MAXN];
         uint32_t n = fc_chord_notes(&c, 36, t);
-        CHECK(n == 6 && t[n - 1] <= 108 && t[0] >= 24, "range high: %u..%u", t[0], t[n - 1]);
+        CHECK(n == 6 && t[n - 1] <= 120 && t[0] >= 12, "range high: %u..%u", t[0], t[n - 1]);
         c = mk(0, FC_Q_MAJ, 0, FC_V_SPREAD, FC_NOBASS, -2);
         n = fc_chord_notes(&c, -36, t);
-        CHECK(t[0] >= 24, "range low: %u", t[0]);
+        CHECK(t[0] >= 12, "range low: %u", t[0]);
     }
     /* voice leading: Am9 -> Dm7 moves little */
     {
@@ -311,6 +311,28 @@ int main(int argc, char **argv)
     fc_player_key(&pl, &set, 0, 0);
     set.play.octave = 0;
     set.play.transpose = 0;
+    /* octave with voice leading on: OCT+ still moves the chord up (it used to be pulled back to the last one) */
+    set.play.voice_lead = 1;
+    {
+        uint8_t lo[FC_MAXN];
+        uint32_t i, nl;
+        fc_player_key(&pl, &set, 1, 100);
+        fc_player_key(&pl, &set, 1, 0);
+        nev = 0;
+        fc_player_key(&pl, &set, 0, 100);
+        nl = 0;
+        for (i = 0; i < nev; i++)
+            if (ev[i].on)
+                lo[nl++] = ev[i].note;
+        fc_player_key(&pl, &set, 0, 0);
+        set.play.octave = 1;
+        nev = 0;
+        fc_player_key(&pl, &set, 0, 100);
+        CHECK(nl && ev[0].on && ev[0].note == lo[0] + 12u, "voice-led, octave +1: %u -> %u", lo[0], ev[0].note);
+        fc_player_key(&pl, &set, 0, 0);
+        set.play.octave = 0;
+    }
+    set.play.voice_lead = 0;
     /* latch: stays on after the key, the same key stops it, another key replaces it */
     set.play.latch = 1;
     nev = 0;

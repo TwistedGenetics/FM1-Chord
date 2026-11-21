@@ -57,6 +57,7 @@ void fc_player_init(fc_player_t *p, const fc_out_t *out)
     p->out = *out;
     p->key = -1;
     p->prev_bass = -1;
+    p->prev_shift = 0;
     p->arp_note = -1;
     p->rng = 0x2545F491u;
 }
@@ -70,8 +71,22 @@ uint32_t fc_player_preview(const fc_player_t *p, const fc_set_t *s, uint32_t key
     c = &s->ch[key];
     n = fc_chord_notes(c, (int32_t)s->play.transpose + 12 * (int32_t)s->play.octave, notes);
     *has_bass = n && c->bass < 12u;
-    if (n && s->play.voice_lead && p->nprev)
-        fc_voice_lead(p->prev, p->nprev, p->prev_bass, notes, n, (int)*has_bass);
+    if (n && s->play.voice_lead && p->nprev) {
+        /* lead from the last chord as it would sound at today's octave / transpose, so OCT- / OCT+ still move the
+         * chords when voice leading is on (it would otherwise pull every chord back next to the last one) */
+        int32_t d = (int32_t)s->play.transpose + 12 * (int32_t)s->play.octave - p->prev_shift, b = p->prev_bass;
+        uint8_t pv[FC_MAXN];
+        uint32_t i;
+        for (i = 0; i < p->nprev; i++) {
+            int32_t v = (int32_t)p->prev[i] + d;
+            pv[i] = (uint8_t)(v < 0 ? 0 : v > 127 ? 127 : v);
+        }
+        if (b >= 0) {
+            b += d;
+            b = b < 0 ? 0 : b > 127 ? 127 : b;
+        }
+        fc_voice_lead(pv, p->nprev, b, notes, n, (int)*has_bass);
+    }
     return n;
 }
 
@@ -102,6 +117,7 @@ static void chord_start(fc_player_t *p, const fc_set_t *s, uint32_t key, uint32_
     for (i = hb; i < p->n; i++)
         p->prev[p->nprev++] = p->notes[i];
     p->prev_bass = hb ? (int32_t)p->notes[0] : -1;
+    p->prev_shift = (int32_t)s->play.transpose + 12 * (int32_t)s->play.octave;
     if (s->play.mode == FC_M_ARP) {
         arp_build(p, s);
         p->arp_i = 0;
