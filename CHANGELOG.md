@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.20
+
+- **Ableton device: how a key plays, on the strip.** CHORD / STRUM / ARP, LATCH and VOICE LEAD, then the mode's
+  own settings: the strum's speed and direction; the arpeggio's rate, direction, octaves and gate; humanise for
+  chords. They change the set (the editor's Playing tab follows).
+- **Playing with the editor window in front.** That window takes the computer's keyboard from Live, so it now
+  plays the keys itself, laid out as Live's computer keyboard (A W S E D F T G … from Key 1; Z / X shift by an
+  octave of keys). The web editor does the same.
+- The editor's page made for the device knows it is in Live even before Max's window.max arrives, and sends by a
+  maxmessage: link if it has to.
+
 ## 0.19
 
 - **Ableton device: the strip's set list and arrows reach the device.** The panel's own controls worked but the

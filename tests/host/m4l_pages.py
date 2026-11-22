@@ -94,7 +94,7 @@ async def main():
         held = await pg.evaluate("(() => { const c = {}; for (const [n, v] of midi) c[n] = (c[n] || 0) + (v ? 1 : -1); return Object.values(c).filter(x => x).length; })()")
         check(on >= 3 and held == 0, f"a strip key: {on} notes on, {held} left hanging")
         chord = await strip.evaluate("document.querySelector('#chord').textContent")
-        check(chord not in ("", "FM1-Chord"), f"the strip shows the chord ({chord!r})")
+        check(chord not in ("", "FM1-Chord", "—"), f"the strip shows the chord ({chord!r})")
 
         # the track: MIDI in lights the key in both; notes outside pass through
         await pg.evaluate("midi.length = 0; messagename = 'note'; note(53 + 4, 100)")
@@ -123,6 +123,34 @@ async def main():
         await strip.click("#next"); await pg.wait_for_timeout(300)
         got = await editor.evaluate("document.querySelector('#setname').value")
         check(got == await pg.evaluate("LIB.sets[10].name"), f"the strip's next arrow ({got!r})")
+
+        # how a key plays, from the strip: mode, then the arp's rate; the editor follows
+        await strip.click("#modes [data-mode='2']"); await pg.wait_for_timeout(300)
+        check(await pg.evaluate("cur.play.mode") == 2, "ARP on the strip: the device arpeggiates")
+        check(await editor.evaluate("window.__fcIn && true") and await strip.evaluate("document.querySelector(\"#modes [data-mode='2']\").classList.contains('on')"),
+              "the strip shows ARP on")
+        r0 = await pg.evaluate("cur.play.arp_rate")
+        await strip.click("#more [data-cyc='arp_rate']"); await pg.wait_for_timeout(300)
+        await pg.screenshot(path=os.path.join(OUT, "strip-arp.png"), clip={"x": 0, "y": 0, "width": 760, "height": 169})
+        check(await pg.evaluate("cur.play.arp_rate") == (r0 + 1) % 6, "the arp's rate steps on")
+        await editor.click("[data-tab=play]"); await pg.wait_for_timeout(200)
+        check(await editor.evaluate("document.querySelector('[data-mode=\"2\"]').classList.contains('on')"), "the editor's Playing tab follows the strip")
+        await strip.click("#modes [data-mode='1']"); await pg.wait_for_timeout(200)
+        await strip.click("#more [data-f='strum'][data-d='5']"); await pg.wait_for_timeout(300)
+        check(await pg.evaluate("cur.play.mode") == 1, "STRUM on the strip")
+        await strip.click("#latch"); await pg.wait_for_timeout(200)
+        check(await pg.evaluate("cur.play.latch") == 1, "LATCH on the strip")
+        await strip.click("#latch"); await pg.wait_for_timeout(200)
+        await strip.click("#modes [data-mode='0']"); await pg.wait_for_timeout(200)
+        await pg.screenshot(path=os.path.join(OUT, "strip-play.png"), clip={"x": 0, "y": 0, "width": 760, "height": 169})
+
+        # the computer's keyboard in the editor window plays (A = key 1)
+        await pg.evaluate("midi.length = 0")
+        await editor.click("#nowplaying")
+        await pg.keyboard.down("a"); await pg.wait_for_timeout(300)
+        n_kb = await pg.evaluate("midi.filter(m => m[1] > 0).length")
+        await pg.keyboard.up("a"); await pg.wait_for_timeout(200)
+        check(n_kb >= 3, f"the A key plays key 1 in the editor window ({n_kb} notes)")
 
         # an edit in the editor plays from the device: rename, Save into My sets
         await editor.fill("#setname", "MY JUNGLE")

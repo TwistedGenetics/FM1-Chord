@@ -33,13 +33,23 @@
   #oct { min-width: 26px; text-align: center; font-size: 17px; color: var(--acc); }
   #info.err { color: #ff6b6b; }
   #ed { background: var(--acc); color: #0c1214; border-color: var(--acc); font-weight: 700; letter-spacing: .04em; }
-  .mid { display: flex; align-items: baseline; gap: 12px; height: 62px; padding: 0 10px; }
-  #chord { font-size: 46px; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden;
-           text-overflow: ellipsis; max-width: 400px; line-height: 60px; }
-  #info { color: var(--soft); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #beat { position: absolute; right: 10px; top: 46px; font-size: 13px; color: var(--soft); }
-  #beat.ok::before { content: "● "; color: #4cd964; }
-  #beat.bad { color: #ff6b6b; }
+  .mid { display: flex; gap: 8px; height: 66px; padding: 0 8px; }
+  .now { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+  #chord { font-size: 38px; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden;
+           text-overflow: ellipsis; line-height: 42px; }
+  #info { color: var(--soft); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* how a key plays: the mode and latch, then the mode's own settings */
+  .playc { width: 392px; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+  .playc .row { display: flex; gap: 3px; align-items: center; }
+  .playc button { height: 28px; padding: 0 8px; font-size: 14px; white-space: nowrap; }
+  .playc .seg button { min-width: 58px; }
+  .playc button.on { background: var(--acc); border-color: var(--acc); color: #0c1214; }
+  .playc .lbl { color: var(--soft); font-size: 12px; margin-left: 3px; }
+  .playc .lbl:first-child { margin-left: 0; }
+  .playc .val { min-width: 38px; text-align: center; font-size: 15px; color: var(--ink); }
+  #more button { padding: 0 7px; }
+  #beat { display: none; position: absolute; right: 8px; bottom: 0; font-size: 12px; color: #ff6b6b; }
+  #beat.bad { display: block; }
   .keys { display: grid; grid-template-columns: repeat(27, 1fr); gap: 2px; height: 58px; padding: 2px 8px 8px; }
   .k { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; display: flex;
        align-items: flex-end; justify-content: center; padding-bottom: 4px; font-size: 11px; color: var(--soft);
@@ -59,8 +69,17 @@
   <button id="ou" aria-label="Octave up">OCT +</button>
   <button id="ed">EDITOR</button>
 </div>
-<div class="mid"><div id="chord">FM1-Chord</div><div id="info">Loading…</div></div>
-<div id="beat" class="bad">device: not heard yet</div>
+<div class="mid">
+  <div class="now"><div id="chord">FM1-Chord</div><div id="info">Loading…</div></div>
+  <div class="playc">
+    <div class="row seg" id="modes">
+      <button data-mode="0">CHORD</button><button data-mode="1">STRUM</button><button data-mode="2">ARP</button>
+      <button id="latch">LATCH</button><button id="vl">VOICE LEAD</button>
+    </div>
+    <div class="row" id="more"></div>
+  </div>
+</div>
+<div id="beat">device: not heard yet</div>
 <div class="keys" id="keys"></div>
 <div id="picker" role="dialog" aria-label="Choose a set">
   <div class="bar"><b>CHOOSE A SET</b><button id="pclose">CLOSE</button></div>
@@ -108,12 +127,37 @@ function keys() {
     d.title = `Key ${k + 1}: ${c || "empty"}`;
   }
 }
+// how a key plays: the buttons show the set's settings; each press asks the device to change one
+const RATES = ["1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32"], SDIRS = ["UP", "DOWN", "ALT"], ADIRS = ["UP", "DOWN", "UP-DN", "RND"];
+function playControls() {
+  const p = state.play || {};
+  document.querySelectorAll("#modes [data-mode]").forEach((b) => b.classList.toggle("on", +b.dataset.mode === (p.mode | 0)));
+  $("#latch").classList.toggle("on", !!p.latch);
+  $("#vl").classList.toggle("on", !!p.voice_lead);
+  const m = $("#more");
+  const cyc = (f, list, base = 0) => `<button data-cyc="${f}" data-n="${list.length}" data-base="${base}">${list[((p[f] | 0) - base + list.length) % list.length]}</button>`;
+  const num = (f, txt, step) => `<button data-f="${f}" data-d="-${step}">−</button><span class="val">${txt}</span><button data-f="${f}" data-d="${step}">+</button>`;
+  if ((p.mode | 0) === 1)
+    m.innerHTML = `<span class="lbl">SPEED</span>${num("strum", ((p.strum | 0) * 2) + "ms", 5)}<span class="lbl">DIR</span>${cyc("strum_dir", SDIRS)}`;
+  else if ((p.mode | 0) === 2)
+    m.innerHTML = `<span class="lbl">RATE</span>${cyc("arp_rate", RATES)}<span class="lbl">DIR</span>${cyc("arp_dir", ADIRS)}` +
+      `<span class="lbl">OCT</span>${cyc("arp_oct", ["1", "2", "3"], 1)}<span class="lbl">GATE</span>${num("arp_gate", (p.arp_gate | 0) + "%", 10)}`;
+  else m.innerHTML = `<span class="lbl">HUMANISE</span>${num("humanise", String(p.humanise | 0), 8)}`;
+  m.querySelectorAll("[data-cyc]").forEach((b) => (b.onclick = () => {
+    const f = b.dataset.cyc, n = +b.dataset.n, base = +b.dataset.base;
+    ask("play", f, base + (((p[f] | 0) - base + 1) % n));
+  }));
+  m.querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => ask("play", b.dataset.f, (p[b.dataset.f] | 0) + +b.dataset.d)));
+}
+document.querySelectorAll("#modes [data-mode]").forEach((b) => (b.onclick = () => ask("play", "mode", +b.dataset.mode)));
+$("#latch").onclick = () => ask("play", "latch", (state.play && state.play.latch) ? 0 : 1);
+$("#vl").onclick = () => ask("play", "voice_lead", (state.play && state.play.voice_lead) ? 0 : 1);
 function chordLine() {
   const k = lit.size ? [...lit].pop() : lastKey;
   const c = k >= 0 ? state.chords[k] : "";
-  $("#chord").textContent = c || (k >= 0 ? "—" : state.name || "FM1-Chord");
-  $("#info").textContent = k >= 0 ? `KEY ${k + 1} · ${NOTE[k % 12]}${3 + Math.floor((k + 5) / 12)}${state.mode ? " · " + state.mode : ""}`
-                                  : (state.mode || "Play from F3 up");
+  $("#chord").textContent = c || "—";
+  if ($("#info").className === "err") return;
+  $("#info").textContent = k >= 0 ? `KEY ${k + 1} · ${NOTE[k % 12]}${3 + Math.floor((k + 5) / 12)}` : "Play a key from Key 1 up";
 }
 function options() {                               // the set button, and the list it opens (drawn by the page:
   const btn = $("#setbtn");                         // a web view inside Live can't open a native drop-down)
@@ -138,15 +182,14 @@ function options() {                               // the set button, and the li
   grp("FACTORY", list.factory, "factory");
 }
 let beatAt = 0;
+const started = Date.now();
 setInterval(() => {                                   // the device's heartbeat stopped?
-  if (beatAt && Date.now() - beatAt > 3000) { $("#beat").className = "bad"; $("#beat").textContent = "device: silent"; }
+  if (Date.now() - (beatAt || started) > 3000) { $("#beat").className = "bad"; $("#beat").textContent = "device: silent"; }
 }, 1000);
 window.__fcIn = (name, data) => {
   if (name === "beat") {
     beatAt = Date.now();
-    const b = $("#beat");
-    b.className = "ok";
-    b.textContent = "device " + data.n + " · last: " + data.last;
+    $("#beat").className = "";
     return;
   }
   if (name === "error") { clearTimeout(waiting); const i = $("#info"); i.textContent = data; i.className = "err"; return; }
@@ -154,7 +197,7 @@ window.__fcIn = (name, data) => {
   else if (name === "show") {
     clearTimeout(waiting); $("#info").className = "";
     $("#oct").textContent = (data.oct > 0 ? "+" : "") + (data.oct | 0);
-    state = data; lastKey = -1; options(); keys(); chordLine(); }
+    state = data; lastKey = -1; options(); keys(); chordLine(); playControls(); }
   else if (name === "lit") {
     const [k, on] = data;
     if (on) { lit.add(k); lastKey = k; } else lit.delete(k);

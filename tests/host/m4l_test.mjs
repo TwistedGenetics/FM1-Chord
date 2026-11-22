@@ -157,6 +157,17 @@ for (let i = 0; i < 9; i++) o.send("octstep", 1);
 check(o.get("oct") === 3, "no higher than +3");
 o.send("octave", -2); check(o.get("oct") === -2 && o.octs[o.octs.length - 1] === -2, "OCT number");
 
+// 5b2. play settings from the strip: into the set, the editor told, kept in range
+const pl = device(); pl.send("loadbang");
+pl.send("play", "mode", 2);
+check(pl.get("cur.play.mode") === 2 && pl.get("live.play.mode") === 2 && JSON.stringify(pl.last(pl.editor, "play")) === '["mode",2]', "play mode: ARP");
+check(pl.last(pl.strip, "show").play.mode === 2 && pl.get("dirty") === 1, "the strip shows it; the set is changed");
+pl.send("play", "arp_rate", 99); check(pl.get("cur.play.arp_rate") === 5, "arp rate held in range");
+pl.send("play", "nonsense", 3); check(pl.get("cur.play.nonsense") === undefined, "an unknown setting is ignored");
+pl.send("play", "latch", 1); pl.send("note", KEY0_NOTE, 100); pl.send("note", KEY0_NOTE, 0);
+pl.midi.length = 0; pl.send("play", "latch", 0);
+check(pl.midi.filter((m) => !m[1]).length > 0, "latch off lets the held chord go");
+
 // 5c. an error anywhere shows on the strip and in the Max window, and nothing stops
 const x = device(); x.send("loadbang");
 x.get("Object.defineProperty(LIB.sets, 3, { get() { throw new Error('boom'); } })");

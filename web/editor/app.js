@@ -1075,6 +1075,30 @@ function bindTop() {
   if (!HOST) window.addEventListener("beforeunload", (e) => { if (st.dirty) { e.preventDefault(); e.returnValue = ""; } });
 }
 
+// ------------------------------------------------------------------------------------ computer keyboard ---
+// the keys from the computer's keyboard, laid out as Live's: A W S E D F T G Y H U J K O L P ; ' from key 1
+// (key 13 after Z / X), so a window in front of Live still plays
+const KB_ROW = ["KeyA", "KeyW", "KeyS", "KeyE", "KeyD", "KeyF", "KeyT", "KeyG", "KeyY", "KeyH", "KeyU", "KeyJ", "KeyK",
+  "KeyO", "KeyL", "KeyP", "Semicolon", "Quote"];
+let kbBase = 0;
+function bindComputerKeys() {
+  const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+  document.addEventListener("keydown", (e) => {
+    if (typing(e) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "KeyZ" || e.code === "KeyX") {
+      kbBase = Math.max(0, Math.min(12, kbBase + (e.code === "KeyX" ? 12 : -12)));
+      toast(`Computer keyboard: A plays key ${kbBase + 1}`); e.preventDefault(); return;
+    }
+    const i = KB_ROW.indexOf(e.code);
+    if (i < 0 || e.repeat) return;
+    const k = kbBase + i;
+    if (k >= NKEYS) return;
+    e.preventDefault();
+    keyDown(k, "kb" + e.code);
+  });
+  document.addEventListener("keyup", (e) => { if (KB_ROW.includes(e.code)) keyUp("kb" + e.code); });
+}
+
 // ---------------------------------------------------------------------------------------- Ableton (host) ---
 // the device lights the keys played in Live, and hands back the Live set's set and My sets when it opens
 function hostSetup() {
@@ -1105,6 +1129,7 @@ function hostSetup() {
       $("#b-save").textContent = st.dirty ? "Save *" : "Save";
     },
     open: ([kind, i]) => { if ((kind === "factory" ? st.factory : st.mine)[i]) openSet(kind, i); },
+    play: ([f, v]) => { if (f in st.set.play) { st.set.play[f] = v; markDirty(); if (f === "octave") octLabel(); if (st.tab === "play") renderPanel(); } },
   });
   hostSay("hello");
 }
@@ -1116,7 +1141,7 @@ async function main() {
   loadMine();
   st.set = cloneSet(st.factory[0]);
   pushSet();
-  bindTop(); bindKeys(); renderAll(); soundBtn();
+  bindTop(); bindKeys(); bindComputerKeys(); renderAll(); soundBtn();
   if (HOST) hostSetup();
   window.__fc = { mock: DEMO, st, preview, dev, live, encodeSet, get mockObj() { return mock; } };
   if (DEMO) { await connectFM1(); status("Demo: a simulated FM-1 (nothing is sent to real hardware)", "ok"); }

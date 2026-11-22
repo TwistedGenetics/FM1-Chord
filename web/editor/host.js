@@ -7,9 +7,16 @@
 // Copyright (C) 2026 Jamie (TwistedGenetics).
 import { setToFile } from "./setcodec.js";
 
-export const HOST = typeof window !== "undefined" && !!window.max && typeof window.max.outlet === "function";
+// the page made for the device (gen_m4l) says so itself: window.max can come later than the page's code
+export const HOST = typeof window !== "undefined" && (!!window.__FC_HOSTED || (!!window.max && typeof window.max.outlet === "function"));
 
-const out = (...a) => { try { window.max.outlet(...a); } catch (e) { console.warn("max.outlet", e); } };
+// to the device: window.max.outlet; without it, Max's other way, a maxmessage: link
+const out = (...a) => {
+  if (window.max && typeof window.max.outlet === "function") { try { window.max.outlet(...a); return; } catch (e) { console.warn("max.outlet", e); } }
+  const l = document.createElement("a");
+  l.href = "maxmessage:" + a.map((x) => encodeURIComponent(String(x))).join("/");
+  document.body.append(l); l.click(); l.remove();
+};
 
 export class MaxPreview {
   constructor() {
@@ -29,6 +36,7 @@ export class MaxPreview {
       this.flush();                               // a key after an edit plays the edited chord
       out("key", m.key, m.vel | 0);
     } else if (m.type === "notes") out("notes", ...(m.vel ? m.notes : []));
+    else if (m.type === "stop") out("stopall");
   }
   flush() {
     clearTimeout(this.timer);

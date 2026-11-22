@@ -47,7 +47,8 @@ const glue = String.raw`
 // in:   note PITCH VEL (the track's MIDI, from midiparse), tick MS (a 5 ms metro), tempo BPM (Live's), base NOTE (the
 //       panel's Key 1), panic
 //       from the editor: hello, set TEXT, origin KIND I DIRTY, dirty D, key K VEL, notes N..., mine TEXT
-//       from the strip: stripready, choose KIND I, step D, key K VEL
+//       from the strip: stripready, choose KIND I, step D, key K VEL, play FIELD VALUE (mode, strum, arp...)
+//       from the editor also: stopall (latch off)
 // (Max calls the function a message names: none of these may share a name with the library above)
 //       from the panel's own controls: setnum N (1.. : My sets, then the factory's), step D, octstep D, octave N
 // out 0: PITCH VEL (to midiformat); out 1: to the strip's web view; out 2: to the editor's; out 3: the SET number;
@@ -78,7 +79,7 @@ function saved() { if (typeof notifyclients === "function") notifyclients(); }
 function show() {
   toStrip("show", { name: cur.name, kind: where.kind, i: where.i,
     chords: cur.chords.map((c) => (isEmpty(c) ? "" : chordName(c))),
-    mode: String(MODES[cur.play.mode] || "").toUpperCase(), oct });
+    mode: String(MODES[cur.play.mode] || "").toUpperCase(), oct, play: cur.play });
 }
 const flat = () => MINE.map((_, i) => ["mine", i]).concat(LIB.sets.map((_, i) => ["factory", i]));
 function number() {                      // the SET number on the panel, without it sending
@@ -154,6 +155,23 @@ function octave(n) {
   show();
 }
 function octstep(d) { octave(oct + (d < 0 ? -1 : 1)); }
+// a play setting from the strip: into the set (as an edit), and the editor told
+const PLAY_RANGE = { mode: [0, 2], strum: [0, 127], strum_dir: [0, 2], arp_rate: [0, 5], arp_dir: [0, 3], arp_oct: [1, 3],
+  arp_gate: [5, 100], latch: [0, 1], voice_lead: [0, 1], humanise: [0, 127] };
+function play(field, v) {
+  field = String(field);
+  const r = PLAY_RANGE[field];
+  if (!r) return;
+  v = Math.max(r[0], Math.min(r[1], Math.round(v)));
+  cur.play[field] = v;
+  if (field === "latch" && !v) { player.stop(); held.clear(); }
+  relive();
+  dirty = 1;
+  show();
+  toEditor("play", [field, v]);
+  saved();
+}
+function stopall() { player.stop(); held.clear(); }
 function panic() {
   player.stop(); held.clear(); raw = [];
   for (let n = 0; n < 128; n++) outlet(0, [n, 0]);
@@ -313,7 +331,7 @@ function bundle(entry) {
 const html = ed("index.html")
   .replace(/<link rel="stylesheet" href="style.css">/, () => `<style>\n${ed("style.css")}\n</style>`)
   .replace(/<script type="module" src="app.js"><\/script>/, () =>
-    `<script>window.__FC_PRESETS = ${presetsText.trim()};</script>\n<script>\n${bundle("app.js").replace(/<\/script/gi, "<\\/script")}\n</script>`)
+    `<script>window.__FC_HOSTED = true; window.__FC_PRESETS = ${presetsText.trim()};</script>\n<script>\n${bundle("app.js").replace(/<\/script/gi, "<\\/script")}\n</script>`)
   .replace("<title>FM1-Chord Editor</title>", `<title>FM1-Chord ${version}</title>`);
 if (!html.includes("__FC_PRESETS") || html.includes('src="app.js"') || html.includes('href="style.css"'))
   throw new Error("index.html: the bundler's markers have moved");
@@ -480,13 +498,16 @@ Install
 Play
   Each key from Key 1 (F3 to start with) up, 27 keys, plays that key's chord in the set, just as the FM-1 does: the
   same voicings, voice leading, strum and arpeggio (at Live's tempo). Other notes and controllers pass through.
-  The strip shows the set (pick one, or step with the arrows), the chord playing and the 27 keys; click a key to
-  hear it.
+  The strip shows the set (pick one, or step with the arrows), the octave, the chord playing and the 27 keys (click
+  one to hear it), and how a key plays: CHORD, STRUM or ARP, LATCH, VOICE LEAD, and the strum's speed and direction
+  or the arpeggio's rate, direction, octaves and gate. The panel beside it: SET with < >, OCT - / OCT +, KEY 1,
+  EDITOR, ALL OFF (all of them automatable).
 
 The editor
   EDITOR opens the whole FM1-Chord editor in its own window: every factory set and My sets, chords, suggestions with
   the colour-coded help, playing (chord, strum, arpeggio), progressions, pasting chords. What you play there, and
-  every change, plays on the track. Save keeps a set in My sets. The set playing and My sets are saved with your Live
+  every change, plays on the track. While that window is in front, your computer's keyboard plays the keys as Live's
+  does (A W S E D F T G Y H U J K O L P ; ' from Key 1; Z and X move it down and up). Save keeps a set in My sets. The set playing and My sets are saved with your Live
   set. (The FM-1's own sound and its connection aren't in this editor: your instrument is the sound.)
 
 If Live says it can't open the .amxd
