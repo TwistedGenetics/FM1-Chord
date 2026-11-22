@@ -27,6 +27,7 @@ function arrayfromargs(a) { return Array.from(a); }
 function notifyclients() { notified++; }
 function outlet(o, a) {
   if (o === 0) { midi.push(a.slice()); return; }
+  if (o === 3) return;
   const f = document.getElementById(o === 1 ? "strip" : "editor");
   if (a[0] === "executejavascript" && f.contentWindow && f.contentWindow.__fcIn) f.contentWindow.eval(a[1]);
 }
@@ -73,9 +74,9 @@ async def main():
         strip, editor = pg.frame("strip"), pg.frame("editor")
         said = await pg.evaluate("said.map(x => x[0] + ':' + x[1])")
         check("strip:stripready" in said and "editor:hello" in said, f"both pages said hello ({said[:6]})")
-        n = await strip.evaluate("document.querySelectorAll('#sets option').length")
+        n = await strip.evaluate("document.querySelectorAll('#plist button').length")
         check(n == 118, f"the strip lists every factory set ({n})")
-        name0 = await strip.evaluate("document.querySelector('#sets').selectedOptions[0].textContent")
+        name0 = await strip.evaluate("document.querySelector('#setbtn').textContent")
         ed0 = await editor.evaluate("document.querySelector('#setname').value")
         check(name0 == ed0, f"strip and editor on the same set ({name0!r} / {ed0!r})")
         check(await editor.evaluate("document.body.classList.contains('host')"), "the editor knows it's in Live")
@@ -106,15 +107,18 @@ async def main():
         check(through == "[[40,90],[40,0]]", f"notes below Key 1 pass through ({through})")
 
         # choosing on the strip opens it in the editor; choosing in the editor shows on the strip
-        await strip.select_option("#sets", "factory:5")
-        await pg.wait_for_timeout(300)
+        async def choose(v):
+            await strip.click("#setbtn")
+            await strip.click(f"#plist button[data-v='{v}']")
+            await pg.wait_for_timeout(300)
+        await choose("factory:5")
         want = await pg.evaluate("LIB.sets[5].name")
         got = await editor.evaluate("document.querySelector('#setname').value")
         check(got == want, f"strip choice opens in the editor ({got!r} / {want!r})")
         await editor.select_option("#lib", "f9")
         await pg.wait_for_timeout(300)
         want = await pg.evaluate("LIB.sets[9].name")
-        got = await strip.evaluate("document.querySelector('#sets').selectedOptions[0].textContent")
+        got = await strip.evaluate("document.querySelector('#setbtn').textContent")
         check(got == want, f"editor choice shows on the strip ({got!r} / {want!r})")
         await strip.click("#next"); await pg.wait_for_timeout(300)
         got = await editor.evaluate("document.querySelector('#setname').value")
@@ -125,10 +129,10 @@ async def main():
         await pg.wait_for_timeout(200)
         check(await pg.evaluate("cur.name") == "MY JUNGLE", "an edit reaches the device")
         await editor.click("#b-save"); await pg.wait_for_timeout(300)
-        mine = await strip.evaluate("[...document.querySelectorAll('#sets optgroup')].map(g => g.label + ':' + g.children.length)")
-        check(mine and mine[0].startswith("My sets:"), f"Save puts it in My sets on the strip ({mine})")
-        await strip.select_option("#sets", "factory:0"); await pg.wait_for_timeout(200)
-        await strip.select_option("#sets", "mine:0"); await pg.wait_for_timeout(300)
+        mine = await strip.evaluate("[...document.querySelectorAll('#plist h4')].map(h => h.textContent)")
+        check(mine and mine[0] == "MY SETS", f"Save puts it in My sets on the strip ({mine})")
+        await choose("factory:0")
+        await choose("mine:0")
         check(await editor.evaluate("document.querySelector('#setname').value") == "MY JUNGLE", "My set chosen on the strip")
         await pg.evaluate("midi.length = 0")
         kk = editor.locator(".kb-key").nth(2)
@@ -141,6 +145,9 @@ async def main():
         state = await pg.evaluate("getvalueof()")
         check(await pg.evaluate("notified") > 0, "the Live set is told it changed")
         await pg.screenshot(path=os.path.join(OUT, "strip.png"), clip={"x": 0, "y": 0, "width": 760, "height": 169})
+        await strip.click("#setbtn"); await pg.wait_for_timeout(200)
+        await pg.screenshot(path=os.path.join(OUT, "strip-sets.png"), clip={"x": 0, "y": 0, "width": 760, "height": 169})
+        await strip.click("#pclose")
         await editor.click("[data-tab=harmony]"); await pg.wait_for_timeout(300)
         await pg.screenshot(path=os.path.join(OUT, "editor.png"), clip={"x": 0, "y": 169, "width": 1180, "height": 820})
 
@@ -153,7 +160,7 @@ async def main():
         await pg2.wait_for_timeout(400)
         e2 = pg2.frame("editor"); s2 = pg2.frame("strip")
         got = await e2.evaluate("document.querySelector('#setname').value")
-        got_s = await s2.evaluate("document.querySelector('#sets').selectedOptions[0].textContent")
+        got_s = await s2.evaluate("document.querySelector('#setbtn').textContent")
         check(got == "MY JUNGLE" and got_s == "MY JUNGLE", f"the Live set's state comes back ({got!r} / {got_s!r})")
         check(await pg2.evaluate("MINE.length") >= 1, "My sets come back")
         await pg2.close()

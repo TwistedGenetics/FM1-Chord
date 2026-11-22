@@ -18,10 +18,11 @@ let fails = 0;
 const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } };
 
 function device() {
-  const midi = [], strip = [], editor = [], posts = [];
+  const midi = [], strip = [], editor = [], posts = [], num = [];
   const ctx = { console, notified: 0, patcher: { filepath: "Macintosh HD:/Users/jamie/Music/FM1-Chord/FM1-Chord.amxd" }, messagename: "", post: (s) => posts.push(s), arrayfromargs: (a) => Array.from(a) };
   ctx.outlet = (o, a) => {
     if (o === 0) { midi.push(a.slice()); return; }
+    if (o === 3) { if (a[0] !== "set") throw new Error("the SET number: " + a.join(" ")); num.push(a[1]); return; }
     if (a[0] === "readfile") { (o === 1 ? strip : editor).push(["readfile", a[1]]); return; }
     const m = /^window\.__fcIn && window\.__fcIn\(("[^"]*"),([\s\S]*)\)$/.exec(a[1]);
     if (a[0] !== "executejavascript" || !m) throw new Error("not a call into a page: " + a.join(" "));
@@ -37,13 +38,13 @@ function device() {
   };
   const last = (list, name) => [...list].reverse().find((x) => x[0] === name)?.[1];
   const get = (expr) => vm.runInContext(expr, ctx);
-  return { midi, strip, editor, posts, send, last, get, ctx };
+  return { midi, strip, editor, posts, num, send, last, get, ctx };
 }
 
 const lib = loadPresets(JSON.parse(readFileSync(join(ROOT, "web/editor/presets.json"), "utf8")));
 const d0 = device();
 d0.send("loadbang");
-check(d0.get("inlets") === 1 && d0.get("outlets") === 3, "inlets / outlets");
+check(d0.get("inlets") === 1 && d0.get("outlets") === 4, "inlets / outlets");
 const L = d0.last(d0.strip, "list");
 check(L && L.factory.length === lib.sets.length && L.mine.length === 0, "the strip gets every set");
 check(d0.last(d0.strip, "show")?.chords.length === NKEYS, "the strip gets 27 chord names");
@@ -123,7 +124,25 @@ check(g.get("MINE.length") === 1, "a 0.10-0.12 device's My sets come in");
 const h = device(); h.send("loadbang"); h.send("setvalueof", "garbage"); h.send("setvalueof", "none");
 check(h.get("cur.name") === lib.sets[0].name && h.posts.length === 1, "junk in the Live set: reported, nothing changes");
 
-// 5. a page that doesn't say hello is loaded again by the device's folder; one that does isn't
+// 5. Live's own controls: SET number (ignored at start: the Live set decides), and it follows the strip and editor
+const n = device(); n.send("loadbang"); n.send("stripready"); n.send("hello");
+n.send("setnum", 7);
+check(n.get("where.i") === 0, "the SET number's stored value at start is left alone");
+for (let i = 0; i < 210; i++) n.send("tick", 5);
+n.send("setnum", 7);
+check(n.get("where.kind") === "factory" && n.get("where.i") === 6 && n.get("cur.name") === lib.sets[6].name, "SET 7 plays factory set 7");
+check(JSON.stringify(n.last(n.editor, "open")) === '["factory",6]' && n.last(n.strip, "show").i === 6, "and the strip and editor follow");
+n.send("choose", "factory", 20);
+check(n.num[n.num.length - 1] === 21, "a set chosen on the strip moves the SET number");
+n.send("mine", bankToFile([lib.sets[1], lib.sets[2]]));
+check(n.num[n.num.length - 1] === 23, "My sets come first in the numbering");
+n.send("setnum", 1);
+check(n.get("where.kind") === "mine" && n.get("where.i") === 0, "SET 1 is my first set");
+n.send("setnum", 999);
+check(n.get("where.i") === lib.sets.length - 1, "SET past the end: the last set");
+check(n.posts.some((p) => /FM1-Chord: set 118 /.test(p)), "set changes are written to the Max window");
+
+// 6. a page that doesn't say hello is loaded again by the device's folder; one that does isn't
 const q = device(); q.send("loadbang"); q.send("stripready");
 for (let i = 0; i < 310; i++) q.send("tick", 5);
 check(q.last(q.editor, "readfile") === "Macintosh HD:/Users/jamie/Music/FM1-Chord/FM1-Chord-editor.html" && !q.last(q.strip, "readfile"),
@@ -132,7 +151,7 @@ const q2 = device(); q2.send("loadbang"); q2.send("stripready"); q2.send("hello"
 for (let i = 0; i < 310; i++) q2.send("tick", 5);
 check(!q2.last(q2.editor, "readfile") && !q2.last(q2.strip, "readfile"), "both pages answered: nothing reloaded");
 
-// 6. every note started, stopped
+// 7. every note started, stopped
 const on = new Map();
 for (const dev of [t, e]) for (const [n, v] of dev.midi) on.set(n, (on.get(n) || 0) + (v ? 1 : -1));
 check([...on.values()].every((c) => c <= 0), "a note left hanging");

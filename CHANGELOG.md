@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15
+
+- **Ableton device: changing sets.** The strip's drop-down was a native menu, which a web view inside Live can't
+  open; the set button now opens a list drawn by the page (My sets, then the factory's). And the panel beside the
+  strip has Live's own controls for it: a **SET** number with **<** and **>** (My sets first, then the factory's;
+  automatable), which work whatever the web view does. Each change of set is written in the Max window.
+
 ## 0.14
 
 - **Ableton device: the strip and the editor show up.** 0.13 asked Max's web view to open its pages with `read`,

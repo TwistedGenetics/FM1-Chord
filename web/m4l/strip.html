@@ -18,7 +18,18 @@
                    border-radius: 6px; height: 30px; }
   button { padding: 0 10px; cursor: pointer; }
   button:active { background: var(--hit); }
-  select { flex: 1; min-width: 0; font-size: 17px; padding: 0 6px; }
+  #setbtn { flex: 1; min-width: 0; font-size: 18px; text-align: left; padding: 0 10px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; }
+  #setbtn::after { content: " ▾"; color: var(--soft); }
+  #picker { position: fixed; inset: 0; background: var(--bg); display: none; flex-direction: column; z-index: 9; }
+  #picker.open { display: flex; }
+  #picker .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  #picker .bar b { flex: 1; font-size: 16px; color: var(--soft); }
+  #plist { flex: 1; overflow-y: auto; padding: 4px 8px 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+           align-content: start; }
+  #plist h4 { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; color: var(--acc); letter-spacing: .06em; }
+  #plist button { height: 30px; font-size: 15px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #plist button.cur { background: var(--acc); color: #0c1214; border-color: var(--acc); }
   #ed { background: var(--acc); color: #0c1214; border-color: var(--acc); font-weight: 700; letter-spacing: .04em; }
   .mid { display: flex; align-items: baseline; gap: 12px; height: 62px; padding: 0 10px; }
   #chord { font-size: 46px; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden;
@@ -36,12 +47,16 @@
 <body>
 <div class="top">
   <button id="prev" aria-label="Previous set">◀</button>
-  <select id="sets" aria-label="Chord set"></select>
+  <button id="setbtn" aria-label="Chord set">FM1-Chord</button>
   <button id="next" aria-label="Next set">▶</button>
   <button id="ed">EDITOR</button>
 </div>
 <div class="mid"><div id="chord">FM1-Chord</div><div id="info">Loading…</div></div>
 <div class="keys" id="keys"></div>
+<div id="picker" role="dialog" aria-label="Choose a set">
+  <div class="bar"><b>CHOOSE A SET</b><button id="pclose">CLOSE</button></div>
+  <div id="plist"></div>
+</div>
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
@@ -79,19 +94,27 @@ function chordLine() {
   $("#info").textContent = k >= 0 ? `KEY ${k + 1} · ${NOTE[k % 12]}${3 + Math.floor((k + 5) / 12)}${state.mode ? " · " + state.mode : ""}`
                                   : (state.mode || "Play from F3 up");
 }
-function options() {
-  const sel = $("#sets");
-  sel.innerHTML = "";
+function options() {                               // the set button, and the list it opens (drawn by the page:
+  const btn = $("#setbtn");                         // a web view inside Live can't open a native drop-down)
+  btn.textContent = state.name || "FM1-Chord";
+  const pl = $("#plist");
+  pl.innerHTML = "";
   const grp = (label, names, kind) => {
     if (!names.length) return;
-    const g = document.createElement("optgroup");
-    g.label = label;
-    names.forEach((n, i) => g.append(new Option(n, kind + ":" + i)));
-    sel.append(g);
+    const h = document.createElement("h4");
+    h.textContent = label;
+    pl.append(h);
+    names.forEach((n, i) => {
+      const b = document.createElement("button");
+      b.textContent = n;
+      b.dataset.v = kind + ":" + i;
+      if (kind === state.kind && i === state.i) b.className = "cur";
+      b.onclick = () => { $("#picker").classList.remove("open"); say("choose", kind, i); };
+      pl.append(b);
+    });
   };
-  grp("My sets", list.mine, "mine");
-  grp("Factory", list.factory, "factory");
-  sel.value = state.kind + ":" + state.i;
+  grp("MY SETS", list.mine, "mine");
+  grp("FACTORY", list.factory, "factory");
 }
 window.__fcIn = (name, data) => {
   if (name === "list") { list = data; options(); }
@@ -102,7 +125,12 @@ window.__fcIn = (name, data) => {
     keys(); chordLine();
   }
 };
-$("#sets").onchange = (e) => { const [kind, i] = e.target.value.split(":"); say("choose", kind, +i); };
+$("#setbtn").onclick = () => {
+  $("#picker").classList.add("open");
+  const c = document.querySelector("#plist .cur");
+  if (c) c.scrollIntoView({ block: "center" });
+};
+$("#pclose").onclick = () => $("#picker").classList.remove("open");
 $("#prev").onclick = () => say("step", -1);
 $("#next").onclick = () => say("step", 1);
 $("#ed").onclick = () => say("openeditor");

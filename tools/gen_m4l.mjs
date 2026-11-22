@@ -49,10 +49,11 @@ const glue = String.raw`
 //       from the editor: hello, set TEXT, origin KIND I DIRTY, dirty D, key K VEL, notes N..., mine TEXT
 //       from the strip: stripready, choose KIND I, step D, key K VEL
 // (Max calls the function a message names: none of these may share a name with the library above)
-// out 0: PITCH VEL (to midiformat); out 1: to the strip's web view; out 2: to the editor's
+//       from the panel's own controls: setnum N (1.. : My sets, then the factory's), step D
+// out 0: PITCH VEL (to midiformat); out 1: to the strip's web view; out 2: to the editor's; out 3: the SET number
 // The set playing, where it came from and My sets are kept in the Live set (pattr, getvalueof / setvalueof).
 inlets = 1;
-outlets = 3;
+outlets = 4;
 autowatch = 1;
 
 const LIB = loadPresets(PRESETS);
@@ -71,6 +72,11 @@ function show() {
   toStrip("show", { name: cur.name, kind: where.kind, i: where.i,
     chords: cur.chords.map((c) => (isEmpty(c) ? "" : chordName(c))),
     mode: String(MODES[cur.play.mode] || "").toUpperCase() });
+}
+const flat = () => MINE.map((_, i) => ["mine", i]).concat(LIB.sets.map((_, i) => ["factory", i]));
+function number() {                      // the SET number on the panel, without it sending
+  const at = flat().findIndex(([k, i]) => k === where.kind && i === where.i);
+  if (at >= 0) outlet(3, ["set", at + 1]);
 }
 function list() {
   toStrip("list", { factory: LIB.sets.map((s) => s.name), mine: MINE.map((s, i) => s.name || "SET " + (i + 1)) });
@@ -91,9 +97,16 @@ function load(kind, i, tell) {
   useSet(cloneSet(src[i]));
   where = { kind, i };
   dirty = 0;
+  post("FM1-Chord: " + (kind === "mine" ? "my set " : "set ") + (i + 1) + " " + cur.name + "\n");
   show();
+  number();
   if (tell) toEditor("open", [kind, i]);
   saved();
+}
+function setnum(n) {
+  if (ticks < 200) return;               // the panel's stored number at start: the Live set's state decides
+  const all = flat(), at = Math.max(1, Math.min(all.length, Math.round(n))) - 1;
+  load(all[at][0], all[at][1], true);
 }
 
 // ---- the track
@@ -107,7 +120,7 @@ function note(pitch, vel) {
 }
 function tick(ms) {
   player.run(cur, Math.max(1, Math.round(ms)), false);
-  if (!pagesOk && ++ticks === 300) pages();          // 1.5 s and a page hasn't said hello: load it by its full path
+  if (ticks < 1000 && ++ticks === 300 && !pagesOk) pages();   // 1.5 s and a page hasn't said hello: by its full path
 }
 // the pages: the patch loads them by name (readfile, from Max's search path); if one doesn't answer, by the path of
 // the folder the device is in
@@ -135,7 +148,7 @@ function set(text) {
   show();
   saved();
 }
-function origin(kind, i, d) { where = { kind: String(kind) === "mine" ? "mine" : "factory", i: i | 0 }; dirty = d ? 1 : 0; show(); saved(); }
+function origin(kind, i, d) { where = { kind: String(kind) === "mine" ? "mine" : "factory", i: i | 0 }; dirty = d ? 1 : 0; show(); number(); saved(); }
 function key(k, vel) {
   k |= 0;
   if (k < 0 || k >= NKEYS) return;
@@ -153,6 +166,7 @@ function mine(text) {
   if (text === "none") { MINE = []; mineText = "none"; }
   else try { MINE = bankFromFile(text); mineText = text; } catch (e) { post("fm1chord: mine: " + e.message + "\n"); return; }
   list();
+  number();
   saved();
 }
 
@@ -160,7 +174,7 @@ function mine(text) {
 function stripready() { stripOk = true; pagesOk = editorOk; list(); show(); }
 function choose(kind, i) { load(String(kind) === "mine" ? "mine" : "factory", i, true); }
 function step(d) {
-  const all = MINE.map((_, i) => ["mine", i]).concat(LIB.sets.map((_, i) => ["factory", i]));
+  const all = flat();
   let at = all.findIndex(([k, i]) => k === where.kind && i === where.i);
   at = ((at < 0 ? 0 : at + (d < 0 ? -1 : 1)) + all.length) % all.length;
   load(all[at][0], all[at][1], true);
@@ -180,7 +194,7 @@ function setvalueof(v) {
       if (o.cur) { useSet(setFromFile(o.cur)); where = { kind: o.kind === "mine" ? "mine" : "factory", i: o.i | 0 }; dirty = o.dirty ? 1 : 0; }
     }
   } catch (e) { post("fm1chord: the Live set's sets didn't load: " + e.message + "\n"); return; }
-  list(); show(); restore();
+  list(); show(); number(); restore();
 }
 
 function anything() {
@@ -299,7 +313,7 @@ const P = patchMaker();
 const midiin = P.obj("midiin", 20, 20, 1, ["int"]);
 const parse = P.obj("midiparse", 20, 60, 1, ["", "", "", "int", "int", "", "int", ""]);
 const pre = P.obj("prepend note", 20, 100, 1, [""]);
-const v8 = P.obj("v8 fm1chord.js", 20, 300, 1, ["", "", ""], { varname: "fm1code" });
+const v8 = P.obj("v8 fm1chord.js", 20, 300, 1, ["", "", "", ""], { varname: "fm1code" });
 const fmt = P.obj("midiformat", 20, 360, 7, ["int", ""]);
 const midiout = P.obj("midiout", 20, 400, 1, []);
 P.wire(midiin, 0, parse, 0); P.wire(parse, 0, pre, 0); P.wire(pre, 0, v8, 0); P.wire(v8, 0, fmt, 0); P.wire(fmt, 0, midiout, 0);
@@ -329,34 +343,51 @@ const pEd = P.box({ maxclass: "newobj", text: "p editor", numinlets: 2, numoutle
 P.wire(strip, 0, rOpen, 0); P.wire(rOpen, 0, openMsg, 0); P.wire(openMsg, 0, pc, 0); P.wire(pc, 0, pEd, 0);
 P.wire(rOpen, 1, v8, 0);
 P.wire(v8, 2, pEd, 1); P.wire(pEd, 0, v8, 0);
-// the panel beside it: Key 1's note, the editor, all notes off
+// the panel beside it, Live's own controls: the set (number, back, on), Key 1's note, the editor, all notes off
+const lbl = (text, x, y, w) => P.box({ maxclass: "live.comment", text, numinlets: 1, numoutlets: 0, fontsize: 12,
+  textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [x + 200, y + 520, w, 18], presentation: 1, presentation_rect: [x, y, w, 18] });
+lbl("SET", 668, 4, 60);
+const setBox = P.box({ maxclass: "live.numbox", varname: "setnum", numinlets: 1, numoutlets: 2, outlettype: ["", "float"],
+  patching_rect: [800, 40, 50, 20], presentation: 1, presentation_rect: [694, 22, 70, 24], fontsize: 14,
+  ...param("Set", "Set", 1, [1, 256], 1) });
+const preS = P.obj("prepend setnum", 800, 70, 1, [""]);
+P.wire(setBox, 0, preS, 0); P.wire(preS, 0, v8, 0); P.wire(v8, 3, setBox, 0);
+const arrow = (text, x, d, name) => {
+  const b = P.box({ maxclass: "live.text", varname: name, text, numinlets: 1, numoutlets: 2, outlettype: ["", ""],
+    patching_rect: [x + 200, 40, 24, 20], presentation: 1, presentation_rect: [x, 22, 22, 24], mode: 0,
+    ...param(name === "setdn" ? "Previous set" : "Next set", name === "setdn" ? "Prev" : "Next", 2, ["off", "on"], 0) });
+  const sl = P.obj("sel 1", x + 200, 70, 2, ["bang", ""]);
+  const m = P.msg("step " + d, x + 200, 100);
+  P.wire(b, 0, sl, 0); P.wire(sl, 0, m, 0); P.wire(m, 0, v8, 0);
+};
+arrow("<", 668, -1, "setdn");
+arrow(">", 768, 1, "setup");
+lbl("KEY 1", 668, 56, 50);
 const k1 = P.box({ maxclass: "live.numbox", varname: "base", numinlets: 1, numoutlets: 2, outlettype: ["", "float"],
-  patching_rect: [600, 40, 50, 20], presentation: 1, presentation_rect: [668, 30, 84, 22],
+  patching_rect: [600, 40, 50, 20], presentation: 1, presentation_rect: [716, 54, 74, 22],
   ...param("Key 1 note", "Key 1", 1, [0, 100], 53, { parameter_unitstyle: 8 }) });
-P.box({ maxclass: "live.comment", text: "KEY 1", numinlets: 1, numoutlets: 0, fontsize: 12,
-  textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [600, 10, 50, 18], presentation: 1, presentation_rect: [668, 8, 84, 18] });
 const preB = P.obj("prepend base", 600, 70, 1, [""]);
 P.wire(k1, 0, preB, 0); P.wire(preB, 0, v8, 0); P.wire(dev, 0, k1, 0);
 const edBtn = P.box({ maxclass: "live.text", varname: "editor", text: "EDITOR", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
-  patching_rect: [700, 100, 60, 20], presentation: 1, presentation_rect: [668, 62, 84, 24], mode: 0,
+  patching_rect: [700, 100, 60, 20], presentation: 1, presentation_rect: [668, 84, 122, 26], mode: 0,
   ...param("Open the editor", "Editor", 2, ["off", "on"], 0) });
 const sel2 = P.obj("sel 1", 700, 130, 2, ["bang", ""]);
 P.wire(edBtn, 0, sel2, 0); P.wire(sel2, 0, openMsg, 0);
 const panicBtn = P.box({ maxclass: "live.text", varname: "panic", text: "ALL OFF", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
-  patching_rect: [600, 100, 60, 20], presentation: 1, presentation_rect: [668, 94, 84, 24], mode: 0,
+  patching_rect: [600, 100, 60, 20], presentation: 1, presentation_rect: [668, 116, 122, 22], mode: 0,
   ...param("All notes off", "Panic", 2, ["off", "on"], 0) });
 const sel1 = P.obj("sel 1", 600, 130, 2, ["bang", ""]);
 const panicMsg = P.msg("panic", 600, 160);
 P.wire(panicBtn, 0, sel1, 0); P.wire(sel1, 0, panicMsg, 0); P.wire(panicMsg, 0, v8, 0);
 P.box({ maxclass: "live.comment", text: `v${version}`, numinlets: 1, numoutlets: 0, fontsize: 10,
-  textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [700, 10, 50, 18], presentation: 1, presentation_rect: [668, 140, 84, 18] });
+  textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [700, 10, 50, 18], presentation: 1, presentation_rect: [668, 146, 122, 18] });
 // the set playing and My sets, saved with the Live set: a stored-only blob parameter bound to the code
 P.box({ maxclass: "newobj", text: "pattr fm1state @bindto fm1code", numinlets: 1, numoutlets: 3, outlettype: ["", "", ""],
   patching_rect: [700, 490, 200, 22], varname: "fm1state",
   ...param("FM1-Chord state", "State", 3, null, 0, { parameter_invisible: 1 }) });
 
 const patcher = { patcher: patcherBase([80, 80, 1100, 760], {
-  openinpresentation: 1, devicewidth: 760.0, description: "FM1-Chord: a chord on every key, as on the M-VAVE FM-1",
+  openinpresentation: 1, devicewidth: 800.0, description: "FM1-Chord: a chord on every key, as on the M-VAVE FM-1",
   boxes: P.boxes, lines: P.lines,
   dependency_cache: ["fm1chord.js", "FM1-Chord-strip.html", "FM1-Chord-editor.html"].map((name) =>
     ({ name, bootpath: ".", patcherrelativepath: ".", type: "TEXT", implicit: 1 })),
