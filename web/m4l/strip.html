@@ -30,6 +30,8 @@
   #plist h4 { grid-column: 1 / -1; margin: 6px 0 0; font-size: 13px; color: var(--acc); letter-spacing: .06em; }
   #plist button { height: 30px; font-size: 15px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #plist button.cur { background: var(--acc); color: #0c1214; border-color: var(--acc); }
+  #oct { min-width: 26px; text-align: center; font-size: 17px; color: var(--acc); }
+  #info.err { color: #ff6b6b; }
   #ed { background: var(--acc); color: #0c1214; border-color: var(--acc); font-weight: 700; letter-spacing: .04em; }
   .mid { display: flex; align-items: baseline; gap: 12px; height: 62px; padding: 0 10px; }
   #chord { font-size: 46px; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden;
@@ -49,6 +51,9 @@
   <button id="prev" aria-label="Previous set">◀</button>
   <button id="setbtn" aria-label="Chord set">FM1-Chord</button>
   <button id="next" aria-label="Next set">▶</button>
+  <button id="od" aria-label="Octave down">OCT −</button>
+  <span id="oct">0</span>
+  <button id="ou" aria-label="Octave up">OCT +</button>
   <button id="ed">EDITOR</button>
 </div>
 <div class="mid"><div id="chord">FM1-Chord</div><div id="info">Loading…</div></div>
@@ -123,8 +128,12 @@ function options() {                               // the set button, and the li
   grp("FACTORY", list.factory, "factory");
 }
 window.__fcIn = (name, data) => {
+  if (name === "error") { clearTimeout(waiting); const i = $("#info"); i.textContent = data; i.className = "err"; return; }
   if (name === "list") { list = data; options(); }
-  else if (name === "show") { clearTimeout(waiting); state = data; lastKey = -1; options(); keys(); chordLine(); }
+  else if (name === "show") {
+    clearTimeout(waiting); $("#info").className = "";
+    $("#oct").textContent = (data.oct > 0 ? "+" : "") + (data.oct | 0);
+    state = data; lastKey = -1; options(); keys(); chordLine(); }
   else if (name === "lit") {
     const [k, on] = data;
     if (on) { lit.add(k); lastKey = k; } else lit.delete(k);
@@ -140,6 +149,8 @@ $("#pclose").onclick = () => $("#picker").classList.remove("open");
 $("#prev").onclick = () => ask("step", -1);
 $("#next").onclick = () => ask("step", 1);
 $("#ed").onclick = () => say("openeditor");
+$("#od").onclick = () => ask("octstep", -1);
+$("#ou").onclick = () => ask("octstep", 1);
 keys(); chordLine();
 say("stripready");
 </script>

@@ -49,19 +49,26 @@ const glue = String.raw`
 //       from the editor: hello, set TEXT, origin KIND I DIRTY, dirty D, key K VEL, notes N..., mine TEXT
 //       from the strip: stripready, choose KIND I, step D, key K VEL
 // (Max calls the function a message names: none of these may share a name with the library above)
-//       from the panel's own controls: setnum N (1.. : My sets, then the factory's), step D
-// out 0: PITCH VEL (to midiformat); out 1: to the strip's web view; out 2: to the editor's; out 3: the SET number
+//       from the panel's own controls: setnum N (1.. : My sets, then the factory's), step D, octstep D, octave N
+// out 0: PITCH VEL (to midiformat); out 1: to the strip's web view; out 2: to the editor's; out 3: the SET number;
+//       out 4: the OCT number
+// Every message runs inside guard(): an error goes to the Max window and shows in red on the strip.
 // The set playing, where it came from and My sets are kept in the Live set (pattr, getvalueof / setvalueof).
 inlets = 1;
-outlets = 4;
+outlets = 5;
 autowatch = 1;
 
 const LIB = loadPresets(PRESETS);
 let base = KEY0_NOTE, tempoNow = 120, MINE = [], mineText = "none";
-let cur = cloneSet(LIB.sets[0]), where = { kind: "factory", i: 0 }, dirty = 0, raw = [];
+let cur = cloneSet(LIB.sets[0]), where = { kind: "factory", i: 0 }, dirty = 0, raw = [], oct = 0, live = cur;
 const held = new Map();                  // incoming note -> key, so a note off finds its key whatever has changed
 const player = new Player({ on: (n, v) => outlet(0, [n, v]), off: (n) => outlet(0, [n, 0]) }, 1000);   // ms
 cur.tempo = 120;
+// what the player plays: the set, with the panel's octave on top of its own (as the FM-1's OCT buttons)
+function relive() {
+  live = Object.assign({}, cur, { play: Object.assign({}, cur.play, { octave: Math.max(-4, Math.min(4, (cur.play.octave | 0) + oct)) }) });
+}
+relive();
 
 function js(o, name, data) {             // call window.__fcIn(name, data) in a web view
   outlet(o, ["executejavascript", "window.__fcIn && window.__fcIn(" + JSON.stringify(name) + "," + JSON.stringify(data) + ")"]);
@@ -71,7 +78,7 @@ function saved() { if (typeof notifyclients === "function") notifyclients(); }
 function show() {
   toStrip("show", { name: cur.name, kind: where.kind, i: where.i,
     chords: cur.chords.map((c) => (isEmpty(c) ? "" : chordName(c))),
-    mode: String(MODES[cur.play.mode] || "").toUpperCase() });
+    mode: String(MODES[cur.play.mode] || "").toUpperCase(), oct });
 }
 const flat = () => MINE.map((_, i) => ["mine", i]).concat(LIB.sets.map((_, i) => ["factory", i]));
 function number() {                      // the SET number on the panel, without it sending
@@ -87,6 +94,7 @@ function useSet(s) {
   const t = cur.tempo;
   cur = s;
   cur.tempo = t || Math.round(tempoNow);
+  relive();
 }
 function load(kind, i, tell) {
   const src = kind === "mine" ? MINE : LIB.sets;
@@ -115,11 +123,11 @@ function note(pitch, vel) {
   if (vel && (k < 0 || k >= NKEYS)) k = -1;
   if (k < 0) { outlet(0, [pitch, vel]); return; }    // not a chord key: through untouched
   if (vel) held.set(pitch, k); else held.delete(pitch);
-  player.keyEvent(cur, k, vel);
+  player.keyEvent(live, k, vel);
   lit(k, vel ? 1 : 0);
 }
 function tick(ms) {
-  player.run(cur, Math.max(1, Math.round(ms)), false);
+  player.run(live, Math.max(1, Math.round(ms)), false);
   if (ticks < 1000 && ++ticks === 300 && !pagesOk) pages();   // 1.5 s and a page hasn't said hello: by its full path
 }
 // the pages: the patch loads them by name (readfile, from Max's search path); if one doesn't answer, by the path of
@@ -134,7 +142,14 @@ function pages() {
   if (!stripOk) { post("FM1-Chord: loading " + dir + "FM1-Chord-strip.html\n"); outlet(1, ["readfile", dir + "FM1-Chord-strip.html"]); }
   if (!editorOk) { post("FM1-Chord: loading " + dir + "FM1-Chord-editor.html\n"); outlet(2, ["readfile", dir + "FM1-Chord-editor.html"]); }
 }
-function tempo(b) { tempoNow = b; cur.tempo = Math.round(b); }
+function tempo(b) { tempoNow = b; cur.tempo = live.tempo = Math.round(b); }
+function octave(n) {
+  oct = Math.max(-3, Math.min(3, Math.round(n)));
+  relive();
+  outlet(4, ["set", oct]);
+  show();
+}
+function octstep(d) { octave(oct + (d < 0 ? -1 : 1)); }
 function panic() {
   player.stop(); held.clear(); raw = [];
   for (let n = 0; n < 128; n++) outlet(0, [n, 0]);
@@ -152,7 +167,7 @@ function origin(kind, i, d) { where = { kind: String(kind) === "mine" ? "mine" :
 function key(k, vel) {
   k |= 0;
   if (k < 0 || k >= NKEYS) return;
-  player.keyEvent(cur, k, vel | 0);
+  player.keyEvent(live, k, vel | 0);
   lit(k, vel ? 1 : 0);
 }
 function notes() {                       // the editor's previews (a scale, a progression step): just these notes
@@ -201,6 +216,17 @@ function setvalueof(v) {
   sendList(); show(); number(); restore();
 }
 
+// every message from Max goes through guard(): an error is written to the Max window and shown on the strip
+function guard(name, f) {
+  return function () {
+    try { return f.apply(this, arguments); }
+    catch (e) {
+      const m = "FM1-Chord: " + name + ": " + (e && e.message ? e.message : e);
+      post(m + "\n");
+      try { toStrip("error", m); } catch (e2) {}
+    }
+  };
+}
 function anything() {
   const a = arrayfromargs(arguments);
   if (messagename === "base") { player.stop(); held.clear(); base = Math.round(a[0]); return; }
@@ -219,6 +245,8 @@ function anything() {
     if (new RegExp(`^(?:async\\s+)?(?:function|const|let|var|class)\\s+${n}\\b`, "m").test(lib))
       throw new Error(`the device's "${n}" is also a name in the editor's code: rename the message`);
 }
+const guarded = [...glue.matchAll(/^function (\w+)/gm)].map((m) => m[1]).filter((n) => !["guard", "js", "show", "sendList", "restore", "lit", "useSet", "relive", "number", "pages", "saved", "flat"].includes(n));
+const guardJs = `\n// ---- every message through guard()\n${guarded.map((n) => `${n} = guard(${JSON.stringify(n)}, ${n});`).join("\n")}\n`;
 const deviceJs = `// FM1-Chord ${version} for Max for Live: generated by tools/gen_m4l.mjs from the FM1-Chord editor's code. Do not
 // edit: change web/editor/*.js and regenerate. GPL-3.0-only. https://github.com/TwistedGenetics/FM1-Chord
 if (typeof structuredClone === "undefined") var structuredClone = (o) => JSON.parse(JSON.stringify(o));
@@ -228,7 +256,7 @@ ${plain(ed("chord.js"), "chord.js")}
 ${plain(ed("setcodec.js"), "setcodec.js")}
 ${plain(ed("harmony.js"), "harmony.js")}
 ${player}
-${glue}`;
+${glue}${guardJs}`;
 writeFileSync(join(out, "fm1chord.js"), deviceJs);
 
 // ================================================================================ the editor as one page ===
@@ -320,7 +348,7 @@ const P = patchMaker();
 const midiin = P.obj("midiin", 20, 20, 1, ["int"]);
 const parse = P.obj("midiparse", 20, 60, 1, ["", "", "", "int", "int", "", "int", ""]);
 const pre = P.obj("prepend note", 20, 100, 1, [""]);
-const v8 = P.obj("v8 fm1chord.js", 20, 300, 1, ["", "", "", ""], { varname: "fm1code" });
+const v8 = P.obj("v8 fm1chord.js", 20, 300, 1, ["", "", "", "", ""], { varname: "fm1code" });
 const fmt = P.obj("midiformat", 20, 360, 7, ["int", ""]);
 const midiout = P.obj("midiout", 20, 400, 1, []);
 P.wire(midiin, 0, parse, 0); P.wire(parse, 0, pre, 0); P.wire(pre, 0, v8, 0); P.wire(v8, 0, fmt, 0); P.wire(fmt, 0, midiout, 0);
@@ -353,38 +381,55 @@ P.wire(v8, 2, pEd, 1); P.wire(pEd, 0, v8, 0);
 // the panel beside it, Live's own controls: the set (number, back, on), Key 1's note, the editor, all notes off
 const lbl = (text, x, y, w) => P.box({ maxclass: "live.comment", text, numinlets: 1, numoutlets: 0, fontsize: 12,
   textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [x + 200, y + 520, w, 18], presentation: 1, presentation_rect: [x, y, w, 18] });
-lbl("SET", 668, 4, 60);
+lbl("SET", 668, 2, 60);
 const setBox = P.box({ maxclass: "live.numbox", varname: "setnum", numinlets: 1, numoutlets: 2, outlettype: ["", "float"],
-  patching_rect: [800, 40, 50, 20], presentation: 1, presentation_rect: [694, 22, 70, 24], fontsize: 14,
+  patching_rect: [800, 40, 50, 20], presentation: 1, presentation_rect: [694, 20, 70, 24], fontsize: 14,
   ...param("Set", "Set", 1, [1, 256], 1) });
 const preS = P.obj("prepend setnum", 800, 70, 1, [""]);
 P.wire(setBox, 0, preS, 0); P.wire(preS, 0, v8, 0); P.wire(v8, 3, setBox, 0);
 const arrow = (text, x, d, name) => {
   const b = P.box({ maxclass: "live.text", varname: name, text, numinlets: 1, numoutlets: 2, outlettype: ["", ""],
-    patching_rect: [x + 200, 40, 24, 20], presentation: 1, presentation_rect: [x, 22, 22, 24], mode: 0,
+    patching_rect: [x + 200, 40, 24, 20], presentation: 1, presentation_rect: [x, 20, 22, 24], mode: 0,
     ...param(name === "setdn" ? "Previous set" : "Next set", name === "setdn" ? "Prev" : "Next", 2, ["off", "on"], 0) });
   const m = P.msg("step " + d, x + 200, 100);       // live.text in button mode sends a bang
   P.wire(b, 0, m, 0); P.wire(m, 0, v8, 0);
 };
 arrow("<", 668, -1, "setdn");
 arrow(">", 768, 1, "setup");
-lbl("KEY 1", 668, 56, 50);
+// octave: OCT - [n] OCT +, as the FM-1's buttons (stays when the set changes)
+lbl("OCTAVE", 668, 48, 60);
+const octBox = P.box({ maxclass: "live.numbox", varname: "octave", numinlets: 1, numoutlets: 2, outlettype: ["", "float"],
+  patching_rect: [900, 40, 50, 20], presentation: 1, presentation_rect: [712, 64, 34, 24], fontsize: 14,
+  ...param("Octave", "Oct", 1, [-3, 3], 0) });
+const preO = P.obj("prepend octave", 900, 70, 1, [""]);
+P.wire(octBox, 0, preO, 0); P.wire(preO, 0, v8, 0); P.wire(v8, 4, octBox, 0);
+const octBtn = (text, x, d, name) => {
+  const b = P.box({ maxclass: "live.text", varname: name, text, numinlets: 1, numoutlets: 2, outlettype: ["", ""],
+    patching_rect: [x + 300, 100, 40, 20], presentation: 1, presentation_rect: [x, 64, 40, 24], mode: 0, fontsize: 12,
+    ...param(d < 0 ? "Octave down" : "Octave up", d < 0 ? "Oct-" : "Oct+", 2, ["off", "on"], 0) });
+  const m = P.msg("octstep " + d, x + 300, 130);
+  P.wire(b, 0, m, 0); P.wire(m, 0, v8, 0);
+};
+octBtn("OCT -", 668, -1, "octdn");
+octBtn("OCT +", 750, 1, "octup");
+// Key 1's note
+lbl("KEY 1", 668, 96, 50);
 const k1 = P.box({ maxclass: "live.numbox", varname: "base", numinlets: 1, numoutlets: 2, outlettype: ["", "float"],
-  patching_rect: [600, 40, 50, 20], presentation: 1, presentation_rect: [716, 54, 74, 22],
+  patching_rect: [600, 40, 50, 20], presentation: 1, presentation_rect: [716, 94, 74, 20],
   ...param("Key 1 note", "Key 1", 1, [0, 100], 53, { parameter_unitstyle: 8 }) });
 const preB = P.obj("prepend base", 600, 70, 1, [""]);
 P.wire(k1, 0, preB, 0); P.wire(preB, 0, v8, 0); P.wire(dev, 0, k1, 0);
 const edBtn = P.box({ maxclass: "live.text", varname: "editor", text: "EDITOR", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
-  patching_rect: [700, 100, 60, 20], presentation: 1, presentation_rect: [668, 84, 122, 26], mode: 0,
+  patching_rect: [700, 100, 60, 20], presentation: 1, presentation_rect: [668, 120, 60, 22], mode: 0,
   ...param("Open the editor", "Editor", 2, ["off", "on"], 0) });
 P.wire(edBtn, 0, openMsg, 0);
 const panicBtn = P.box({ maxclass: "live.text", varname: "panic", text: "ALL OFF", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
-  patching_rect: [600, 100, 60, 20], presentation: 1, presentation_rect: [668, 116, 122, 22], mode: 0,
+  patching_rect: [600, 100, 60, 20], presentation: 1, presentation_rect: [732, 120, 58, 22], mode: 0,
   ...param("All notes off", "Panic", 2, ["off", "on"], 0) });
 const panicMsg = P.msg("panic", 600, 160);
 P.wire(panicBtn, 0, panicMsg, 0); P.wire(panicMsg, 0, v8, 0);
 P.box({ maxclass: "live.comment", text: `v${version}`, numinlets: 1, numoutlets: 0, fontsize: 10,
-  textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [700, 10, 50, 18], presentation: 1, presentation_rect: [668, 146, 122, 18] });
+  textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [700, 10, 50, 18], presentation: 1, presentation_rect: [668, 148, 122, 16] });
 // the set playing and My sets, saved with the Live set: a stored-only blob parameter bound to the code
 P.box({ maxclass: "newobj", text: "pattr fm1state @bindto fm1code", numinlets: 1, numoutlets: 3, outlettype: ["", "", ""],
   patching_rect: [700, 490, 200, 22], varname: "fm1state",

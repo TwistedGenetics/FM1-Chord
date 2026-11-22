@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17
+
+- **Ableton device: octave up and down.** OCT − and OCT + on the panel (with the octave, −3 to +3, automatable)
+  and on the strip play every chord an octave lower or higher, as the FM-1's buttons do; the octave stays when the
+  set changes.
+- **Errors show.** Every message into the device runs guarded: if anything fails, the strip shows it in red (and
+  the Max window has it), and the device carries on.
+
 ## 0.16
 
 - **Ableton device: the panel's buttons work.** < > , EDITOR and ALL OFF went through a filter waiting for a 1, but

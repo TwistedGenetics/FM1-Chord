@@ -18,10 +18,11 @@ let fails = 0;
 const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } };
 
 function device() {
-  const midi = [], strip = [], editor = [], posts = [], num = [];
+  const midi = [], strip = [], editor = [], posts = [], num = [], octs = [];
   const ctx = { console, notified: 0, patcher: { filepath: "Macintosh HD:/Users/jamie/Music/FM1-Chord/FM1-Chord.amxd" }, messagename: "", post: (s) => posts.push(s), arrayfromargs: (a) => Array.from(a) };
   ctx.outlet = (o, a) => {
     if (o === 0) { midi.push(a.slice()); return; }
+    if (o === 4) { octs.push(a[1]); return; }
     if (o === 3) { if (a[0] !== "set") throw new Error("the SET number: " + a.join(" ")); num.push(a[1]); return; }
     if (a[0] === "readfile") { (o === 1 ? strip : editor).push(["readfile", a[1]]); return; }
     const m = /^window\.__fcIn && window\.__fcIn\(("[^"]*"),([\s\S]*)\)$/.exec(a[1]);
@@ -38,13 +39,13 @@ function device() {
   };
   const last = (list, name) => [...list].reverse().find((x) => x[0] === name)?.[1];
   const get = (expr) => vm.runInContext(expr, ctx);
-  return { midi, strip, editor, posts, num, send, last, get, ctx };
+  return { midi, strip, editor, posts, num, octs, send, last, get, ctx };
 }
 
 const lib = loadPresets(JSON.parse(readFileSync(join(ROOT, "web/editor/presets.json"), "utf8")));
 const d0 = device();
 d0.send("loadbang");
-check(d0.get("inlets") === 1 && d0.get("outlets") === 4, "inlets / outlets");
+check(d0.get("inlets") === 1 && d0.get("outlets") === 5, "inlets / outlets");
 const L = d0.last(d0.strip, "list");
 check(L && L.factory.length === lib.sets.length && L.mine.length === 0, "the strip gets every set");
 check(d0.last(d0.strip, "show")?.chords.length === NKEYS, "the strip gets 27 chord names");
@@ -141,6 +142,28 @@ check(n.get("where.kind") === "mine" && n.get("where.i") === 0, "SET 1 is my fir
 n.send("setnum", 999);
 check(n.get("where.i") === lib.sets.length - 1, "SET past the end: the last set");
 check(n.posts.some((p) => /FM1-Chord: set 118 /.test(p)), "set changes are written to the Max window");
+
+// 5b. octave: OCT + plays the same chord 12 up, stays when the set changes, -3..+3, shows on the strip
+const o = device(); o.send("loadbang"); o.send("choose", "factory", 0);
+const play = (dev, k) => { dev.midi.length = 0; dev.send("note", KEY0_NOTE + k, 100); for (let i = 0; i < 40; i++) dev.send("tick", 5);
+  const on = dev.midi.filter((m) => m[1]).map((m) => m[0]); dev.send("note", KEY0_NOTE + k, 0); for (let i = 0; i < 40; i++) dev.send("tick", 5); return on; };
+o.send("panic"); const a0 = play(o, 0);
+o.send("panic"); o.send("octstep", 1); const a1 = play(o, 0);
+check(a0.length > 0 && a1.length === a0.length && a1.every((n, i) => n === a0[i] + 12), `OCT +: 12 up (${a0} / ${a1})`);
+check(o.octs[o.octs.length - 1] === 1 && o.last(o.strip, "show").oct === 1, "OCT shows on the panel and the strip");
+o.send("choose", "factory", 0); o.send("panic"); const a2 = play(o, 0);
+check(a2.join() === a1.join(), "the octave stays when the set changes");
+for (let i = 0; i < 9; i++) o.send("octstep", 1);
+check(o.get("oct") === 3, "no higher than +3");
+o.send("octave", -2); check(o.get("oct") === -2 && o.octs[o.octs.length - 1] === -2, "OCT number");
+
+// 5c. an error anywhere shows on the strip and in the Max window, and nothing stops
+const x = device(); x.send("loadbang");
+x.get("Object.defineProperty(LIB.sets, 3, { get() { throw new Error('boom'); } })");
+x.send("choose", "factory", 3);
+check(/boom/.test(x.last(x.strip, "error") || "") && x.posts.some((p) => /FM1-Chord: .*boom/.test(p)), "an error shows on the strip");
+x.send("note", KEY0_NOTE, 100);
+check(x.midi.length > 0, "and the device goes on playing");
 
 // 6. a page that doesn't say hello is loaded again by the device's folder; one that does isn't
 const q = device(); q.send("loadbang"); q.send("stripready");
