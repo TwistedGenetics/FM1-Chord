@@ -27,6 +27,7 @@ typedef struct {
     float ic1, ic2, ic3, ic4;       /* the filter's state (3, 4: the second stage, 24 dB) */
     float ssa[6], ssb[6];           /* the supersaw's six other saws, A and B */
     float key;                      /* note - 60, for key tracking */
+    uint8_t shed;                   /* the CPU guard took it: fading out fast */
 } fc_voice_t;
 
 #define FC_CH_LEN 1024u
@@ -48,6 +49,7 @@ typedef struct {
     float level, cut_st, fenv_st, track, res, detune_c, bl, sub, fm, vs, drive;
     uint32_t wa, wb;
     uint32_t age, maxv;              /* voices it may use (fc_synth_voices) */
+    uint32_t gmax, gcool;            /* the CPU guard's cap on that, and how long the CPU has been easy */
     /* modulation: the matrix's slots in use, split into those for each voice and those for the whole synth */
     uint8_t mv_src[FC_NMOD], mv_dst[FC_NMOD], mg_src[FC_NMOD], mg_dst[FC_NMOD];
     float mv_amt[FC_NMOD], mg_amt[FC_NMOD];
@@ -84,3 +86,7 @@ void fc_synth_all_off(fc_synth_t *s);
 /* adds nothing: writes n stereo frames (interleaved L R) in -1..1 */
 void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n);
 uint32_t fc_synth_active(const fc_synth_t *s);             /* voices sounding */
+/* the CPU guard, after every audio block, with the share of the block's time the block took (percent): from 85 %
+ * it holds the synth to fewer voices (fading out the oldest beyond the cap, released ones first); below 60 % for
+ * about a second, it gives one back. Returns the cap (= the voices allowed when the CPU is easy). */
+uint32_t fc_synth_guard(fc_synth_t *s, uint32_t pct);

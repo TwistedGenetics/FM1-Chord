@@ -18,7 +18,7 @@ along the bottom. Every page's values are on K1–K4.
 | **ARP** | PLAYING: MODE (chord / strum / arp), STRUM (ms), DIR, HUMAN(ise). Again: ARP: RATE, DIR, OCTAVES, GATE |
 | **LFO** | latch on / off (lit when on): a chord keeps sounding after you let go; the same key again stops it |
 | **SEL** | auto voice leading on / off (lit when on) |
-| **GLO** | GLOBAL: MIDI CH (out), OUTPUT (both / synth / MIDI), CLOCK (internal / MIDI: the arpeggiator follows MIDI clock in), VELO (the keys' velocity). Again: **GLOBAL 2**: VOICES (4–10) |
+| **GLO** | GLOBAL: MIDI CH (out), OUTPUT (both / synth / MIDI), CLOCK (internal / MIDI: the arpeggiator follows MIDI clock in), VELO (the keys' velocity). Again: **GLOBAL 2**: VOICES (4–10), and the sound's load on the CPU: CPU (now), PEAK (the last few seconds), DROPS (times the sound broke up since power-on) |
 | **SAVE** | SAVE page. On one of your user sets it first offers **OVERWRITE** (that set's slot); turn K1 (or PRESET) for **SAVE AS NEW** (each empty slot) or **REPLACE** (another of your sets, its name shown). SAVE again saves; any other button: not saved |
 | **PLAY** | all notes off (and All Notes Off on MIDI out) |
 | **SEQ** | reserved for progressions and phrases (next version) |
@@ -43,8 +43,10 @@ HOME twice gives four knobs that do the useful thing for that sound. LO-FI (FX t
 the 80s or 90s (the editor has SP-1200, MPC60, S950 and Amiga settings), wobbles like tape, and phases; the chorus
 has three modes (I, II, I+II) in the editor.
 
-If heavy sounds crackle on the FM-1 (too much for its CPU), **GLOBAL** twice gives **VOICES**: fewer voices, less
-work.
+If the sound stutters or crackles, **GLOBAL** twice shows the CPU. Above about 85 % the FM-1 plays fewer voices by
+itself (VOICES then shows, say, 6/10) and fades out the oldest notes, so the sound doesn't break up; it gives the
+voices back after a second or so of ease. DROPS counts the times it broke up anyway. Lowering **VOICES** there
+keeps a heavy sound well clear.
 
 **Paste chords (editor, 0.4).** *Paste chords* reads chord sets from text (a note, a chart, a forum post): one set per
 line or paragraph, `Name: chords` or a name line above them. Each set's chords go on the white keys from F3; with

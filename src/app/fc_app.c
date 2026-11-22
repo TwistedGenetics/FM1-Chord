@@ -54,6 +54,9 @@ static uint32_t fc_msg_until;
 static int32_t fc_knob_hit = -1;                 /* the knob turned last (its value drawn highlighted) */
 static uint32_t fc_knob_until;
 static uint32_t fc_aud_key = 0xFFu, fc_aud_until;
+/* the audio's load, set by the hardware layer after every block (0 on the host): GLOBAL 2 shows it */
+static volatile uint32_t fc_cpu_now, fc_cpu_peak, fc_cpu_drops, fc_cpu_cap = FC_VOICES;
+static uint32_t fc_cpu_shown, fc_cpu_t;
 static uint32_t fc_save_slot;
 /* SAVE's choices: 0x80 | slot overwrite the set's own slot, slot a new (empty) slot, 0x40 | slot replace another */
 static uint8_t fc_sv[FC_NUSER + 1u];
@@ -206,7 +209,7 @@ enum {
     P_HUMAN, P_RATE, P_ADIR, P_AOCT, P_GATE, P_MCH, P_OUT, P_CLK, P_VEL, P_SLOT,
     P_M1, P_M2, P_M3, P_M4, P_FMODE, P_SLOPE, P_DRIVE, P_FTRK, P_MA, P_MD, P_MS, P_MR, P_L1R, P_L1W, P_L2R, P_L2W,
     P_DTIME, P_DFB, P_DMIX, P_DTONE,
-    P_WA, P_WB, P_WTPOS, P_SPREAD, P_BSEMI, P_BMODE, P_BLEV, P_SUB, P_BITS, P_CRATE, P_WOB, P_PHASER, P_VOICES
+    P_WA, P_WB, P_WTPOS, P_SPREAD, P_BSEMI, P_BMODE, P_BLEV, P_SUB, P_BITS, P_CRATE, P_WOB, P_PHASER, P_VOICES, P_CPU, P_PEAK, P_DROPS
 };
 static const uint8_t FC_PAGE_P[PG_N][4] = {
     {P_SET, P_OCT, P_TRANS, P_TEMPO},         {P_ROOT, P_QUAL, P_INV, P_VOICE},
@@ -218,7 +221,7 @@ static const uint8_t FC_PAGE_P[PG_N][4] = {
     {P_FMODE, P_SLOPE, P_DRIVE, P_FTRK},      {P_MA, P_MD, P_MS, P_MR},
     {P_L1R, P_L1W, P_L2R, P_L2W},             {P_DTIME, P_DFB, P_DMIX, P_DTONE},
     {P_WA, P_WB, P_WTPOS, P_SPREAD},          {P_BSEMI, P_BMODE, P_BLEV, P_SUB},
-    {P_BITS, P_CRATE, P_WOB, P_PHASER},       {P_VOICES, P_NONE, P_NONE, P_NONE},
+    {P_BITS, P_CRATE, P_WOB, P_PHASER},       {P_VOICES, P_CPU, P_PEAK, P_DROPS},
 };
 static const char *const FC_P_LABEL[] = {
     "", "SET", "OCT", "TRANS", "TEMPO", "ROOT", "TYPE", "INV", "VOICE", "BASS", "OCTAVE", "LATCH", "V.LEAD",
@@ -226,7 +229,7 @@ static const char *const FC_P_LABEL[] = {
     "MODE", "STRUM", "DIR", "HUMAN", "RATE", "DIR", "OCTAVES", "GATE", "MIDI CH", "OUTPUT", "CLOCK", "VELO", "SLOT",
     "MACRO 1", "MACRO 2", "MACRO 3", "MACRO 4", "TYPE", "SLOPE", "DRIVE", "KEY TRK", "ATTACK", "DECAY", "SUSTAIN",
     "RELEASE", "L1 RATE", "L1 WAVE", "L2 RATE", "L2 WAVE", "TIME", "FEEDBK", "MIX", "TONE",
-    "WAVE A", "WAVE B", "WT POS", "SPREAD", "B TUNE", "B MODE", "B LEVEL", "SUB", "BITS", "RATE", "WOBBLE", "PHASER", "VOICES"};
+    "WAVE A", "WAVE B", "WT POS", "SPREAD", "B TUNE", "B MODE", "B LEVEL", "SUB", "BITS", "RATE", "WOBBLE", "PHASER", "VOICES", "CPU", "PEAK", "DROPS"};
 static const char *const FC_WAVE_S[FC_NW] = {"SAW", "SQUARE", "TRI", "SINE", "ORGAN", "PULSE", "SUPER", "NOISE",
     "VOX", "PWM WT", "DIGI", "GLASS"};
 /* a macro knob's label: what it moves first (the editor sets that up), else MACRO n */
@@ -412,7 +415,27 @@ static void fc_ptext(uint32_t p, char *b)
         break;
     case P_WOB: fc_num(b, fc_set.s3.wobble, 0); break;
     case P_PHASER: fc_num(b, fc_set.s3.fx & 0x3Fu, 0); break;
-    case P_VOICES: fc_num(b, fc_g.voices ? fc_g.voices : (int32_t)FC_VOICES, 0); break;
+    case P_VOICES: {                             /* the setting; "6/10" while the CPU guard holds it to fewer */
+        uint32_t want = fc_g.voices ? fc_g.voices : FC_VOICES, k = 0;
+        if (fc_cpu_cap < want) {
+            fc_num(b, (int32_t)fc_cpu_cap, 0);
+            for (; b[k]; k++)
+                ;
+            b[k++] = '/';
+        }
+        fc_num(b + k, (int32_t)want, 0);
+        break;
+    }
+    case P_CPU:
+    case P_PEAK: {
+        uint32_t k;
+        fc_num(b, (int32_t)(p == P_CPU ? fc_cpu_now : fc_cpu_peak), 0);
+        for (k = 0; b[k]; k++)
+            ;
+        fc_cpy(b + k, "%");
+        break;
+    }
+    case P_DROPS: fc_num(b, (int32_t)fc_cpu_drops, 0); break;
     default: break;
     }
 }
@@ -726,6 +749,14 @@ void fc_app_input(void)
             }
         }
     fc_keys_prev = keys;
+    if (fc_page == PG_GLOBAL2 && now - fc_cpu_t >= 250u) {   /* the load figures, four times a second */
+        uint32_t sig = fc_cpu_now | fc_cpu_peak << 8 | fc_cpu_cap << 16 | fc_cpu_drops << 20;
+        fc_cpu_t = now;
+        if (sig != fc_cpu_shown) {
+            fc_cpu_shown = sig;
+            fc_touch();
+        }
+    }
     if (fc_aud_key != 0xFFu && (int32_t)(now - fc_aud_until) >= 0) {
         if (!fc_set.play.latch) {
             fc_lock();

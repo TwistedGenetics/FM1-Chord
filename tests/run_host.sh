@@ -24,6 +24,8 @@ build/host/chord_test dump | node tests/host/chord_xcheck.mjs
 $CC $W tests/host/synth_test.c src/dsp/fc_synth.c $CORE -o build/host/synth_test
 build/host/synth_test build/host
 # shellcheck disable=SC2086
+$CC $W tests/host/cpu_test.c src/dsp/fc_synth.c $CORE -lm -o build/host/cpu_test
+build/host/cpu_test
 $CC $W tests/host/synth_dump.c src/dsp/fc_synth.c $CORE -lm -o build/host/synth_dump
 build/host/synth_dump | node tests/host/synth_xcheck.mjs
 # shellcheck disable=SC2086

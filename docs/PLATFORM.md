@@ -27,7 +27,7 @@ bottom. "Unverified" means nobody has measured it on a device yet, as far as we 
 | Synth | 10 voices, two oscillators + sub + FM, 12 dB SVF with its envelope, amp envelope, stereo chorus, reverb; one core |
 | Storage | user sets: 10 in `OBJ_PAT0`, 10 in `OBJ_PAT1` (384 B each from 0.7; 376 B in 0.6, 336 B before); settings in `OBJ_SOUND`; X0X's calibration (`OBJ_PANEL`) untouched |
 | MIDI | notes out on a chosen channel (synth, MIDI or both); notes in play the keys (F3 = key 1); MIDI clock in drives the arpeggiator |
-| CPU | host measurement (PC, ten voices): about 140 ns a frame for a 0.5-style pad; 300–450 ns for the heaviest 0.7 combination (two supersaws, 24 dB filter, drive, matrix, crusher, wobble, phaser, delay, reverb). The budget at 44.1 kHz is about 8,000 cycles a frame at 360 MHz. On the FM-1: **unverified**; GLOBAL 2 VOICES lowers the load |
+| CPU | host measurement (PC, ten voices): about 140 ns a frame for a 0.5-style pad; 300–450 ns for the heaviest 0.7 combination (two supersaws, 24 dB filter, drive, matrix, crusher, wobble, phaser, delay, reverb). The budget at 44.1 kHz is about 8,000 cycles a frame at 360 MHz. On the FM-1: GLOBAL 2 shows CPU, PEAK and DROPS (0.11); a guard sheds voices above 85 %. Denormals: none, ever (tests/host/cpu_test: in 0.10 every quiet tail made them, the likely cause of the first stutter report) |
 
 ## Build and update
 

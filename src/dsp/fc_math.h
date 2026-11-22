@@ -45,9 +45,14 @@ static inline float fc_tanf(float x)
 
 static inline float fc_clampf(float x, float lo, float hi) { return x < lo ? lo : x > hi ? hi : x; }
 
-/* a soft clip: linear to about 0.5, 1 at the limit */
+/* a soft clip: linear to about 0.5, 1 at the limit. Below 1e-5 the cube is under 1e-16 of x: x as it is, so the
+ * anti-denormal offsets (1e-20) and quiet tails are never cubed into denormals (1e-60), which a CPU without
+ * denormal hardware works out very slowly, sample after sample, while nothing plays */
 static inline float fc_soft(float x)
 {
+    float a = x < 0.f ? -x : x;
+    if (a < 1e-5f)
+        return x;
     if (x > 1.5f)
         return 1.f;
     if (x < -1.5f)

@@ -22,7 +22,7 @@ export function sinTurn(t) {
   y = 0.225 * (y * Math.abs(y) - y) + y;
   return -y;
 }
-const soft = (x) => (x > 1.5 ? 1 : x < -1.5 ? -1 : x - (4 / 27) * x * x * x);
+const soft = (x) => (Math.abs(x) < 1e-5 ? x : x > 1.5 ? 1 : x < -1.5 ? -1 : x - (4 / 27) * x * x * x);   // fc_soft
 const wrap1 = (p) => (p >= 1 ? p - 1 : p < 0 ? p + 1 : p);
 function blep(t, dt) {
   if (t < dt) { t /= dt; return t + t - t * t - 1; }
@@ -287,11 +287,11 @@ export class Synth {
         v.pb = wrap1(v.pb + ib); v.ps = wrap1(v.ps + ia * 0.5);
         if (drv > 0) { const u = x * dg; x = dc * u / (1 + Math.abs(u)); }
         const v3 = x - v.ic2, v1 = a1 * v.ic1 + a2 * v3, v2 = v.ic2 + a2 * v.ic1 + a3 * v3;
-        v.ic1 = 2 * v1 - v.ic1; v.ic2 = 2 * v2 - v.ic2;
+        v.ic1 = 2 * v1 - v.ic1 + ANTI_DENORMAL; v.ic2 = 2 * v2 - v.ic2;
         let y = Synth.svfOut(mode, x, v1, v2, k);
         if (slope) {
           const w3 = y - v.ic4, w1 = b1 * v.ic3 + b2 * w3, w2 = v.ic4 + b2 * v.ic3 + b3 * w3;
-          v.ic3 = 2 * w1 - v.ic3; v.ic4 = 2 * w2 - v.ic4;
+          v.ic3 = 2 * w1 - v.ic3 + ANTI_DENORMAL; v.ic4 = 2 * w2 - v.ic4;
           y = Synth.svfOut(mode, y, mode === 1 ? R2 * w1 : w1, w2, R2);
         }
         v.ea = Synth.step(0, v.ea, this.amp, v, "sa");

@@ -174,6 +174,7 @@ void fc_synth_init(fc_synth_t *s, float *mem, int16_t *dly)
     fc_sound3_default(&d3);
     s->wob = 1.f;
     s->maxv = FC_VOICES;
+    s->gmax = FC_VOICES;
     fc_synth_sound(s, &d, &dx, &d3);
 }
 
@@ -191,18 +192,29 @@ void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel)
             break;
         }
     }
-    if (!v)
-        for (i = 0; i < s->maxv; i++) {
+    if (!v) {
+        uint32_t cap = s->maxv < s->gmax ? s->maxv : s->gmax, n = 0;
+        fc_voice_t *fr = 0;
+        for (i = 0; i < FC_VOICES; i++) {
             fc_voice_t *x = &s->v[i];
             if (!x->stage_a) {
-                v = x;
-                break;
+                if (!fr)
+                    fr = x;
+                continue;
             }
+            if (x->shed)
+                continue;
+            n++;
             if (x->stage_a == 3u && (!rel || x->age < rel->age))
                 rel = x;
             if (!old || x->age < old->age)
                 old = x;
         }
+        if (fr && n < cap)
+            v = fr;
+        else if (!rel && !old)                      /* every voice fading: take one */
+            v = fr ? fr : &s->v[0];
+    }
     if (!v) {
         v = rel ? rel : old;
         v->ea = 0.f;                                /* stolen */
@@ -225,6 +237,7 @@ void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel)
         }
     }
     v->note = (uint8_t)note;
+    v->shed = 0;
     v->on = 1;
     v->stage_a = 1;
     v->stage_f = 1;
@@ -262,6 +275,51 @@ void fc_synth_all_off(fc_synth_t *s)
             s->v[i].stage_f = 3;
             s->v[i].stage_m = 3;
         }
+}
+
+static uint32_t sounding(const fc_synth_t *s)    /* voices playing that the guard hasn't taken */
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < FC_VOICES; i++)
+        n += s->v[i].stage_a && !s->v[i].shed;
+    return n;
+}
+
+uint32_t fc_synth_guard(fc_synth_t *s, uint32_t pct)
+{
+    uint32_t i, n, lim = s->maxv < s->gmax ? s->maxv : s->gmax;
+    if (pct >= 85u) {
+        s->gcool = 0;
+        n = sounding(s);
+        if (n > 3u && n - 1u < lim)
+            lim = n - 1u;
+        else if (lim > 3u)
+            lim--;
+        s->gmax = lim;
+        for (; n > lim; n--) {                      /* fade out the rest: released ones first, then the oldest */
+            fc_voice_t *w = 0;
+            for (i = 0; i < FC_VOICES; i++) {
+                fc_voice_t *x = &s->v[i];
+                if (!x->stage_a || x->shed)
+                    continue;
+                if (!w || (x->stage_a == 3u) > (w->stage_a == 3u) ||
+                    ((x->stage_a == 3u) == (w->stage_a == 3u) && x->age < w->age))
+                    w = x;
+            }
+            if (!w)
+                break;
+            w->shed = 1;
+            w->on = 0;
+            w->stage_a = w->stage_f = w->stage_m = 3;
+        }
+    } else if (pct < 60u) {
+        if (++s->gcool >= 86u && s->gmax < FC_VOICES) {   /* 86 FM-1 blocks of 512 samples: a second */
+            s->gmax++;
+            s->gcool = 0;
+        }
+    } else
+        s->gcool = 0;
+    return s->maxv < s->gmax ? s->maxv : s->gmax;
 }
 
 uint32_t fc_synth_active(const fc_synth_t *s)
@@ -488,19 +546,23 @@ static void voice_render(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
             v3 = x - v->ic2;
             v1 = a1 * v->ic1 + a2 * v3;
             v2 = v->ic2 + a2 * v->ic1 + a3 * v3;
-            v->ic1 = 2.f * v1 - v->ic1;
-            v->ic2 = 2.f * v2 - v->ic2;
+            v->ic1 = 2.f * v1 - v->ic1 + FC_ANTI_DENORMAL;   /* on a square's flat top the band dies away: */
+            v->ic2 = 2.f * v2 - v->ic2;                     /* never into denormals (slow on the FM-1's CPU) */
             y = svf_out(mode, x, v1, v2, k);
             if (slope) {
                 float w1, w2, w3;
                 w3 = y - v->ic4;
                 w1 = b1 * v->ic3 + b2 * w3;
                 w2 = v->ic4 + b2 * v->ic3 + b3 * w3;
-                v->ic3 = 2.f * w1 - v->ic3;
+                v->ic3 = 2.f * w1 - v->ic3 + FC_ANTI_DENORMAL;
                 v->ic4 = 2.f * w2 - v->ic4;
                 y = svf_out(mode, y, mode == FC_F_BP ? 1.41421356f * w1 : w1, w2, 1.41421356f);
             }
             v->ea = env_step(&v->stage_a, v->ea, &s->amp);
+            if (v->shed && (v->ea *= 0.995f) < 1e-4f) {    /* the guard's fast fade: about 20 ms */
+                v->ea = 0.f;
+                v->stage_a = 0;
+            }
             v->ef = env_step(&v->stage_f, v->ef, &s->flt);
             if (s->use_menv)
                 v->em = env_step(&v->stage_m, v->em, &s->menv);

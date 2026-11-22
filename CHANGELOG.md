@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11
+
+- **Stutter fix.** Whenever the sound went quiet (between notes, at the end of a tail, holding a low pulse or square
+  chord) the synth's effects and filters worked with *denormals*, numbers so tiny that a CPU without hardware for
+  them is many times slower on each one: on a PC the quiet synth cost about seven times its usual work. The soft
+  clipper no longer cubes the effects' tiny guard values, and the filter's band state is kept clear of them.
+  tests/host/cpu_test checks every factory sound and 300 random ones, playing and silent: none makes one now
+  (before: all 300 did).
+- **A CPU guard.** If a block of sound takes more than 85 % of its time, the FM-1 plays fewer voices (the oldest
+  fade out in about 20 ms, released ones first) instead of breaking up, and gives them back after about a second
+  of ease.
+- **GLOBAL 2 shows the load:** CPU, PEAK (the last few seconds) and DROPS (break-ups since power-on); VOICES shows
+  6/10 while the guard holds it to fewer.
+
 ## 0.10
 
 - **Your own sets in Ableton.** The editor's new **For Ableton** button saves all of My sets (including any you

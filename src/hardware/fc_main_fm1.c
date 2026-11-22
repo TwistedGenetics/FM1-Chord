@@ -112,6 +112,19 @@ static void render_block(int32_t *o)
     audio_cpu_pct = (fc_dbg.cpu_q8 * 100u) >> 8;
     if (us * 100u / budget > audio_peak_pct)
         audio_peak_pct = us * 100u / budget;
+    fc_cpu_cap = fc_synth_guard(&fc_syn, us * 100u / budget);   /* fewer voices before the sound can break up */
+    fc_cpu_now = audio_cpu_pct;
+    {                                               /* GLOBAL 2's peak: the highest of about the last 3 s */
+        static uint32_t pk, pk_n;
+        uint32_t pc = us * 100u / budget;
+        if (pc > pk)
+            pk = pc;
+        if (++pk_n >= 256u) {
+            fc_cpu_peak = pk;
+            pk = pk_n = 0;
+        } else if (pk > fc_cpu_peak)
+            fc_cpu_peak = pk;
+    }
     fc_dbg.halves++;
     fc_dbg.last_us = us;
     if (us > fc_dbg.max_us)
@@ -130,6 +143,7 @@ void fm1_alnk0_irq(void)                            /* via isr_alnk0 (hal/fm1_is
         if (fm1_audio_free_half() != half) {
             fc_dbg.late++;                          /* the DMA moved on while we rendered */
             audio_xruns++;
+            fc_cpu_drops++;
         }
     }
 }
