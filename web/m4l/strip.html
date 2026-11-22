@@ -1,0 +1,113 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- FM1-Chord for Ableton Live: the device's own strip (in Max's web view, 660 x 169). The set, the chord playing
+     and the 27 keys; EDITOR opens the full editor in its own window. Talks to the device (fm1chord.js) through
+     window.max; the device calls window.__fcIn(name, data). Copyright (C) 2026 Jamie (TwistedGenetics). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FM1-Chord</title>
+<style>
+  :root { --bg: #1b1d20; --panel: #262a2e; --line: #3a3f45; --ink: #eceef0; --soft: #a3a9b1; --acc: #3cc8dc;
+          --hit: #164048; --empty: #202326; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 169px; width: 660px; overflow: hidden; background: var(--bg); color: var(--ink);
+               font: 600 14px/1.2 "Barlow Semi Condensed", "Arial Narrow", Arial, sans-serif; user-select: none; }
+  .top { display: flex; gap: 6px; align-items: center; height: 40px; padding: 6px 8px 4px; }
+  button, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+                   border-radius: 6px; height: 30px; }
+  button { padding: 0 10px; cursor: pointer; }
+  button:active { background: var(--hit); }
+  select { flex: 1; min-width: 0; font-size: 17px; padding: 0 6px; }
+  #ed { background: var(--acc); color: #0c1214; border-color: var(--acc); font-weight: 700; letter-spacing: .04em; }
+  .mid { display: flex; align-items: baseline; gap: 12px; height: 62px; padding: 0 10px; }
+  #chord { font-size: 46px; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden;
+           text-overflow: ellipsis; max-width: 400px; line-height: 60px; }
+  #info { color: var(--soft); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .keys { display: grid; grid-template-columns: repeat(27, 1fr); gap: 2px; height: 58px; padding: 2px 8px 8px; }
+  .k { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; display: flex;
+       align-items: flex-end; justify-content: center; padding-bottom: 4px; font-size: 11px; color: var(--soft);
+       overflow: hidden; cursor: pointer; }
+  .k.b { background: #15171a; margin-bottom: 14px; }
+  .k.e { opacity: .35; }
+  .k.on { background: var(--acc); border-color: var(--acc); color: #0c1214; }
+</style>
+</head>
+<body>
+<div class="top">
+  <button id="prev" aria-label="Previous set">◀</button>
+  <select id="sets" aria-label="Chord set"></select>
+  <button id="next" aria-label="Next set">▶</button>
+  <button id="ed">EDITOR</button>
+</div>
+<div class="mid"><div id="chord">FM1-Chord</div><div id="info">Loading…</div></div>
+<div class="keys" id="keys"></div>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const say = (...a) => { try { window.max.outlet(...a); } catch (e) { console.log("max:", a.join(" ")); } };
+const NOTE = ["F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E"];
+const isBlack = (k) => [1, 3, 5, 8, 10].includes(k % 12);
+let state = { name: "", kind: "factory", i: 0, chords: [], mode: "" }, lit = new Set(), lastKey = -1;
+let list = { factory: [], mine: [] };
+
+function keys() {
+  const el = $("#keys");
+  if (el.children.length !== 27) {
+    el.innerHTML = "";
+    for (let k = 0; k < 27; k++) {
+      const d = document.createElement("div");
+      d.className = "k" + (isBlack(k) ? " b" : "");
+      d.dataset.k = k;
+      d.onpointerdown = (e) => { d.setPointerCapture(e.pointerId); say("key", k, 100); };
+      d.onpointerup = d.onpointercancel = () => say("key", k, 0);
+      el.append(d);
+    }
+  }
+  for (const d of el.children) {
+    const k = +d.dataset.k, c = state.chords[k] || "";
+    d.classList.toggle("on", lit.has(k));
+    d.classList.toggle("e", !c);
+    d.textContent = c.replace(/^([A-G][#b]?).*/, "$1");
+    d.title = `Key ${k + 1}: ${c || "empty"}`;
+  }
+}
+function chordLine() {
+  const k = lit.size ? [...lit].pop() : lastKey;
+  const c = k >= 0 ? state.chords[k] : "";
+  $("#chord").textContent = c || (k >= 0 ? "—" : state.name || "FM1-Chord");
+  $("#info").textContent = k >= 0 ? `KEY ${k + 1} · ${NOTE[k % 12]}${3 + Math.floor((k + 5) / 12)}${state.mode ? " · " + state.mode : ""}`
+                                  : (state.mode || "Play from F3 up");
+}
+function options() {
+  const sel = $("#sets");
+  sel.innerHTML = "";
+  const grp = (label, names, kind) => {
+    if (!names.length) return;
+    const g = document.createElement("optgroup");
+    g.label = label;
+    names.forEach((n, i) => g.append(new Option(n, kind + ":" + i)));
+    sel.append(g);
+  };
+  grp("My sets", list.mine, "mine");
+  grp("Factory", list.factory, "factory");
+  sel.value = state.kind + ":" + state.i;
+}
+window.__fcIn = (name, data) => {
+  if (name === "list") { list = data; options(); }
+  else if (name === "show") { state = data; lastKey = -1; options(); keys(); chordLine(); }
+  else if (name === "lit") {
+    const [k, on] = data;
+    if (on) { lit.add(k); lastKey = k; } else lit.delete(k);
+    keys(); chordLine();
+  }
+};
+$("#sets").onchange = (e) => { const [kind, i] = e.target.value.split(":"); say("choose", kind, +i); };
+$("#prev").onclick = () => say("step", -1);
+$("#next").onclick = () => say("step", 1);
+$("#ed").onclick = () => say("openeditor");
+keys(); chordLine();
+say("stripready");
+</script>
+</body>
+</html>

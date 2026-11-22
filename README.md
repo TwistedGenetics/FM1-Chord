@@ -62,10 +62,10 @@ exported as a MIDI file; sets saved in the browser, as `.chordset` files and on 
 ## Ableton Live
 
 Each release has `FM1-Chord-M4L-X.Y.zip`: a **Max for Live MIDI effect** that plays every set the way the FM-1 does
-(same voicings, voice leading, strum, arpeggio at Live's tempo) into any instrument or VST. Unzip, keep
-`FM1-Chord.amxd` and `fm1chord.js` together, drag the `.amxd` onto a MIDI track before the instrument. Your own sets: **For Ableton** in the editor, then
-**LOAD SETS** on the device (they're saved with the Live set). It is made
-from the editor's code on every release (`tools/gen_m4l.mjs`); its README has a fallback if Live won't open it.
+(same voicings, voice leading, strum, arpeggio at Live's tempo) into any instrument or VST. Its strip shows the set,
+the chord and the 27 keys; **EDITOR** opens the whole editor in its own window, and everything you play or change
+there plays on the track. Keep the zip's four files together and drag `FM1-Chord.amxd` onto a MIDI track before the
+instrument. It is made from the editor's code on every release (`tools/gen_m4l.mjs`).
 
 ## Build
 

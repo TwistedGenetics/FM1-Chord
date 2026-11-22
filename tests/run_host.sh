@@ -52,5 +52,6 @@ for p in Path("build/host").glob("*.ppm"):
 PY
 node --test web/editor/test/*.test.mjs web/flasher/test/*.test.mjs >build/host/node-tests.txt 2>&1 || { cat build/host/node-tests.txt; exit 1; }
 echo "ok   editor and flasher tests ($(grep -c '^ok' build/host/node-tests.txt) passed)"
-node tools/gen_m4l.mjs build/m4l >/dev/null && node tests/host/m4l_test.mjs build/m4l || exit 1
+rm -rf build/m4l && node tools/gen_m4l.mjs build/m4l >/dev/null && node tests/host/m4l_test.mjs build/m4l || exit 1
+python3 tests/host/m4l_pages.py build/m4l build/host || exit 1   # the device's pages in headless Chrome (skips without playwright)
 echo "host tests: all ok"

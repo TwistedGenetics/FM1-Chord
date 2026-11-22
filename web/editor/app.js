@@ -16,6 +16,7 @@ import { Preview } from "./audio.js";
 import { Device, midiAccess, WORKING, FACTORY0, NUSER } from "./device.js";
 import { mockFM1 } from "./mock-fm1.js";
 import { LiveSync, EVT } from "./live.js";
+import { HOST, MaxPreview, hostListen, hostSay } from "./host.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -28,7 +29,7 @@ const st = {
   learn: null, prog: { steps: [], phrase: 0, rec: false, playing: false, recT: 0, recKey: -1, at: -1 },
   progTimer: null, midiOut: null, local: true,
 };
-const preview = new Preview();
+const preview = HOST ? new MaxPreview() : new Preview();   // in Ableton the device plays, not the page
 const dev = new Device();
 const live = new LiveSync(dev);
 let mock = null, access = null;
@@ -39,8 +40,11 @@ function loadMine() {
   st.mine.forEach(ensureSx);                       // saved before 0.6: no sound part 2
 }
 function saveMine() {
-  try { localStorage.setItem(LS, JSON.stringify(st.mine)); } catch (e) { toast("Couldn't save in this browser: " + e.message); }
+  try { localStorage.setItem(LS, JSON.stringify(st.mine)); } catch (e) { if (!HOST) toast("Couldn't save in this browser: " + e.message); }
+  if (HOST) hostSay("mine", bankFile(st.mine));      // My sets go into the Live set too
 }
+const bankFile = (sets) => (sets.length ? bankToFile(sets) : "none");
+function hostWhere() { if (HOST) hostSay("origin", st.cur.kind, st.cur.i, st.dirty ? 1 : 0); }
 function libLabel() {
   const sel = $("#lib");
   sel.innerHTML = "";
@@ -58,17 +62,26 @@ function libLabel() {
   sel.value = st.cur.kind === "fm1" ? `d${st.cur.i}` : (st.cur.kind === "factory" ? "f" : "m") + st.cur.i;
 }
 function openSet(kind, i) {
-  if (st.dirty && !confirm("This set has changes that aren't saved. Open another anyway?")) { libLabel(); return; }
+  if (st.dirty && HOST) keepEdits();                // no dialogs in Live: the changes go into My sets instead
+  else if (st.dirty && !confirm("This set has changes that aren't saved. Open another anyway?")) { libLabel(); return; }
   st.cur = { kind, i };
   st.set = cloneSet(kind === "factory" ? st.factory[i] : st.mine[i]);
   st.dirty = false;
   if (st.sel >= NKEYS) st.sel = 0;
   stopProg();
   pushSet();
+  hostWhere();
   live.open(st.set, kind === "factory" ? FACTORY0 + i : -1);
   renderAll();
 }
-function markDirty() { st.dirty = true; $("#b-save").textContent = "Save *"; pushSet(); live.edit(st.set); }
+// in Live: a changed set about to be left is kept (a factory set as a copy in My sets)
+function keepEdits() {
+  if (st.cur.kind === "mine") st.mine[st.cur.i] = cloneSet(st.set);
+  else st.mine.push(cloneSet(st.set));
+  saveMine(); st.dirty = false;
+  toast(`Your changes to "${st.set.name}" are kept in My sets`);
+}
+function markDirty() { if (HOST && !st.dirty) hostSay("dirty", 1); st.dirty = true; $("#b-save").textContent = "Save *"; pushSet(); live.edit(st.set); }
 
 // ---- live sync: the FM-1's panel changed its set; show it here, without sending it back ----
 function sameSet(a, b) { const x = encodeSet(a), y = encodeSet(b); return x.every((v, j) => v === y[j]); }
@@ -457,7 +470,7 @@ function panelHarmony(p) {
     renderPanel();
   };
   const fill = (all) => {
-    if (all && !confirm("Replace every chord in this set with suggestions?")) return;
+    if (all && !HOST && !confirm("Replace every chord in this set with suggestions?")) return;
     st.set.chords = fillSet(st.set.chords, root, scale, { bias: st.bias, all, seed: st.pickNth++ });
     markDirty(); renderKeys(); renderPanel(); toast(all ? "Every key refilled" : "Empty keys filled");
   };
@@ -554,7 +567,8 @@ function pasteDialog() {
     $("#imp-mine").onclick = () => save(false);
     if ($("#imp-fm1")) $("#imp-fm1").onclick = () => save(true);
   };
-  if (st.dirty && !confirm("This set has changes that aren't saved. Paste chords anyway? (The new sets open after.)")) return;
+  if (st.dirty && HOST) keepEdits();
+  else if (st.dirty && !confirm("This set has changes that aren't saved. Paste chords anyway? (The new sets open after.)")) return;
   step1();
   d.showModal();
 }
@@ -1014,18 +1028,24 @@ function bindTop() {
   $("#b-save").onclick = () => {
     if (st.cur.kind !== "mine") { st.mine.push(cloneSet(st.set)); st.cur = { kind: "mine", i: st.mine.length - 1 }; }
     else st.mine[st.cur.i] = cloneSet(st.set);
-    saveMine(); st.dirty = false; renderAll(); toast(`Saved "${st.set.name}" in My sets`);
+    saveMine(); st.dirty = false; hostWhere(); renderAll(); toast(`Saved "${st.set.name}" in My sets`);
   };
   $("#b-new").onclick = () => {
-    if (st.dirty && !confirm("Discard the changes to this set?")) return;
+    if (st.dirty && HOST) keepEdits();
+    else if (st.dirty && !confirm("Discard the changes to this set?")) return;
     st.mine.push(newSet(`MY SET ${st.mine.length + 1}`)); saveMine(); st.dirty = false; openSet("mine", st.mine.length - 1);
   };
   $("#b-dup").onclick = () => {
     const s = cloneSet(st.set); s.name = (s.name.slice(0, 12) + " CPY").slice(0, 16);
     st.mine.push(s); saveMine(); st.dirty = false; openSet("mine", st.mine.length - 1);
   };
-  $("#b-del").onclick = () => {
-    if (st.cur.kind !== "mine" || !confirm(`Delete "${st.set.name}" from this device?`)) return;
+  $("#b-del").onclick = (e) => {
+    if (st.cur.kind !== "mine") return;
+    if (HOST) {                                    // no dialogs in Live: press twice
+      const b = e.currentTarget;
+      if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Sure? Delete"; setTimeout(() => { delete b.dataset.sure; b.textContent = "Delete"; }, 3000); return; }
+      delete b.dataset.sure; b.textContent = "Delete";
+    } else if (!confirm(`Delete "${st.set.name}" from this device?`)) return;
     st.mine.splice(st.cur.i, 1); saveMine(); st.dirty = false; openSet("factory", 0);
   };
   $("#b-export").onclick = () => download(`${(st.set.name || "set").trim().replace(/\s+/g, "-")}.chordset`, setToFile(st.set), "application/json");
@@ -1052,19 +1072,54 @@ function bindTop() {
   preview.onEvent((m) => {
     if (m.type === "note" && st.midiOut) st.midiOut.send(m.on ? [0x90, m.note, m.vel] : [0x80, m.note, 0]);
   });
-  window.addEventListener("beforeunload", (e) => { if (st.dirty) { e.preventDefault(); e.returnValue = ""; } });
+  if (!HOST) window.addEventListener("beforeunload", (e) => { if (st.dirty) { e.preventDefault(); e.returnValue = ""; } });
+}
+
+// ---------------------------------------------------------------------------------------- Ableton (host) ---
+// the device lights the keys played in Live, and hands back the Live set's set and My sets when it opens
+function hostSetup() {
+  document.body.classList.add("host");
+  for (const id of ["#b-live", "#b-sound", "#b-bank"]) $(id).hidden = true;
+  for (const t of ["sound", "device"]) document.querySelector(`.tabs [data-tab="${t}"]`).hidden = true;
+  status("In Ableton Live: keys here and on your track play the track's instrument", "ok");
+  hostListen({
+    lit: ([k, on]) => {
+      if (on) { st.lit.set(k, 1); showNow(k); } else st.lit.delete(k);
+      litKeys();
+    },
+    restore: ({ cur, kind, i, dirty, mine }) => {
+      if (mine && mine !== "none") {
+        try {
+          const sets = bankFromFile(mine);
+          if (!st.mine.length) { st.mine = sets; try { localStorage.setItem(LS, JSON.stringify(st.mine)); } catch {} }
+        } catch (e) { console.warn("restore mine", e); }
+      }
+      if (cur) {
+        try {
+          st.set = setFromFile(cur);
+          st.cur = (kind === "factory" && st.factory[i]) || (kind === "mine" && st.mine[i]) ? { kind, i } : { kind: "factory", i: 0 };
+          st.dirty = !!dirty || !(st.cur.kind === kind && st.cur.i === i);
+        } catch (e) { console.warn("restore cur", e); }
+      }
+      stopProg(); pushSet(); renderAll();
+      $("#b-save").textContent = st.dirty ? "Save *" : "Save";
+    },
+    open: ([kind, i]) => { if ((kind === "factory" ? st.factory : st.mine)[i]) openSet(kind, i); },
+  });
+  hostSay("hello");
 }
 
 async function main() {
-  const json = await (await fetch(new URL("./presets.json", import.meta.url))).json();
+  const json = window.__FC_PRESETS || await (await fetch(new URL("./presets.json", import.meta.url))).json();
   const pr = loadPresets(json);
   st.sounds = pr.sounds; st.factory = pr.sets;
   loadMine();
   st.set = cloneSet(st.factory[0]);
   pushSet();
   bindTop(); bindKeys(); renderAll(); soundBtn();
+  if (HOST) hostSetup();
   window.__fc = { mock: DEMO, st, preview, dev, live, encodeSet, get mockObj() { return mock; } };
   if (DEMO) { await connectFM1(); status("Demo: a simulated FM-1 (nothing is sent to real hardware)", "ok"); }
-  else if (!navigator.requestMIDIAccess) status("No Web MIDI here: editing and sound work; the FM-1 needs Chrome / Edge or the iPad app");
+  else if (!HOST && !navigator.requestMIDIAccess) status("No Web MIDI here: editing and sound work; the FM-1 needs Chrome / Edge or the iPad app");
 }
 main().catch((e) => status("Couldn't start: " + e.message, "bad"));

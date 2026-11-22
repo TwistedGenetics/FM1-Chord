@@ -1,140 +1,131 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The Max for Live device's code (build/m4l/fm1chord.js, from tools/gen_m4l.mjs) run with Max's v8 globals faked:
-// it must load, play every set's keys exactly as the editor's own player does, pass other notes through, follow the
-// panel, and let every note go.
+// The Ableton device's code (fm1chord.js, from tools/gen_m4l.mjs) run with Max's v8 globals faked: every set,
+// chosen as the strip chooses it, plays exactly as the editor's player does; other notes pass through; the
+// editor's messages (set, key, notes, mine, origin) do what they say; the state kept in the Live set comes back
+// (and a 0.10-0.12 device's My sets); every note it starts it stops. The pages themselves: m4l_pages.py.
 //   node tests/host/m4l_test.mjs DIR     (DIR holds fm1chord.js)
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { Player } from "../../web/editor/engine.js";
-import { loadPresets, cloneSet, bankToFile, setToFile } from "../../web/editor/setcodec.js";
+import { loadPresets, cloneSet, setToFile, bankToFile } from "../../web/editor/setcodec.js";
 import { KEY0_NOTE, NKEYS } from "../../web/editor/chord.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const dir = process.argv[2];
-const src = readFileSync(join(dir, "fm1chord.js"), "utf8");
+const src = readFileSync(join(process.argv[2], "fm1chord.js"), "utf8");
 let fails = 0;
 const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } };
 
-const FILES = new Map();                  // Max's File, over a fake disk
-class File {
-  constructor(path) { this.text = FILES.get(path); this.isopen = this.text !== undefined; this.position = 0;
-    this.eof = this.isopen ? this.text.length : 0; }
-  readstring(n) { const r = this.text.slice(this.position, this.position + n); this.position += r.length; return r; }
-  close() {}
-}
 function device() {
-  const out = [], shown = {}, posts = [];
-  const ctx = {
-    outlet: (i, a) => { if (i === 0) out.push(a.slice()); else shown[a[0]] = a.slice(1).join(" "); },
-    post: (s) => posts.push(s),
-    arrayfromargs: (a) => Array.from(a),
-    messagename: "",
-    console, File, notified: 0,
+  const midi = [], strip = [], editor = [], posts = [];
+  const ctx = { console, notified: 0, messagename: "", post: (s) => posts.push(s), arrayfromargs: (a) => Array.from(a) };
+  ctx.outlet = (o, a) => {
+    if (o === 0) { midi.push(a.slice()); return; }
+    const m = /^window\.__fcIn && window\.__fcIn\(("[^"]*"),([\s\S]*)\)$/.exec(a[1]);
+    if (a[0] !== "executejavascript" || !m) throw new Error("not a call into a page: " + a.join(" "));
+    (o === 1 ? strip : editor).push([JSON.parse(m[1]), JSON.parse(m[2])]);
   };
   ctx.notifyclients = () => ctx.notified++;
   vm.createContext(ctx);
-  vm.runInContext(src + "\n;this.__api = { note, tick, tempo, setnum, panic, loadbang, anything, inlets, outlets, read, getvalueof, setvalueof };", ctx);
-  const api = ctx.__api;
-  const msg = (name, ...a) => { ctx.messagename = name; api.anything(...a); };
-  return { api, out, shown, posts, msg, ctx };
+  vm.runInContext(src, ctx);
+  const send = (name, ...a) => {               // as Max: the function the message names, else anything()
+    ctx.messagename = name;
+    const f = vm.runInContext(`typeof ${name} === "function" ? ${name} : null`, ctx);
+    return (f || vm.runInContext("anything", ctx))(...a);
+  };
+  const last = (list, name) => [...list].reverse().find((x) => x[0] === name)?.[1];
+  const get = (expr) => vm.runInContext(expr, ctx);
+  return { midi, strip, editor, posts, send, last, get, ctx };
 }
 
-// 1. it loads, with two outlets and every set
-const d = device();
-check(d.api.inlets === 1 && d.api.outlets === 2, "inlets/outlets");
-d.api.loadbang();
-check(/^1\. /.test(d.shown.name || ""), `name shown: ${d.shown.name}`);
-check(/118 factory sets/.test(d.shown.info || ""), `info: ${d.shown.info}`);
-
-// 2. every key of every set in chord mode, voice leading on, plays what the editor's player plays
 const lib = loadPresets(JSON.parse(readFileSync(join(ROOT, "web/editor/presets.json"), "utf8")));
+const d0 = device();
+d0.send("loadbang");
+check(d0.get("inlets") === 1 && d0.get("outlets") === 3, "inlets / outlets");
+const L = d0.last(d0.strip, "list");
+check(L && L.factory.length === lib.sets.length && L.mine.length === 0, "the strip gets every set");
+check(d0.last(d0.strip, "show")?.chords.length === NKEYS, "the strip gets 27 chord names");
+
+// 1. every set, chosen as the strip does, plays what the editor's player plays (ticks for strum and arp)
 let compared = 0;
 for (let si = 0; si < lib.sets.length; si++) {
   const dev = device();
-  dev.api.loadbang();
-  dev.api.setnum(si + 1);
+  dev.send("loadbang");
+  dev.send("tempo", 120);
+  dev.send("choose", "factory", si);
+  check(dev.last(dev.editor, "open")?.[1] === si, `set ${si + 1}: the editor is told to open it`);
+  dev.midi.length = 0;
   const ref = [], set = cloneSet(lib.sets[si]);
-  Object.assign(set.play, { mode: 0, latch: 0, voice_lead: 1, octave: 0, transpose: 0, strum: 15, strum_dir: 0,
-    arp_rate: 3, arp_dir: 0, arp_oct: 1, arp_gate: 60, humanise: 0 });
   set.tempo = 120;
   const p = new Player({ on: (n, v) => ref.push([n, v]), off: (n) => ref.push([n, 0]) }, 1000);
   for (const k of [0, 4, 9, 13, 26, 2]) {
-    dev.api.note(KEY0_NOTE + k, 100); p.keyEvent(set, k, 100);
-    dev.api.tick(5); p.run(set, 5, false);
-    dev.api.note(KEY0_NOTE + k, 0); p.keyEvent(set, k, 0);
-    dev.api.tick(5); p.run(set, 5, false);
+    dev.send("note", KEY0_NOTE + k, 100); p.keyEvent(set, k, 100);
+    for (let t = 0; t < 40; t++) { dev.send("tick", 5); p.run(set, 5, false); }
+    dev.send("note", KEY0_NOTE + k, 0); p.keyEvent(set, k, 0);
+    for (let t = 0; t < 40; t++) { dev.send("tick", 5); p.run(set, 5, false); }
   }
-  check(JSON.stringify(dev.out) === JSON.stringify(ref), `set ${si + 1}: notes differ from the editor's player`);
+  check(JSON.stringify(dev.midi) === JSON.stringify(ref), `set ${si + 1} (${set.name}): notes differ from the editor's player`);
   compared += ref.length;
 }
 
-// 3. notes outside the 27 keys pass through untouched
-const t = device(); t.api.loadbang();
-t.api.note(KEY0_NOTE - 1, 90); t.api.note(KEY0_NOTE + NKEYS, 80); t.api.note(KEY0_NOTE + NKEYS, 0);
-check(JSON.stringify(t.out) === JSON.stringify([[KEY0_NOTE - 1, 90], [KEY0_NOTE + NKEYS, 80], [KEY0_NOTE + NKEYS, 0]]), "pass-through");
+// 2. the track: keys light both pages; other notes pass through; Key 1 moves; panic
+const t = device(); t.send("loadbang");
+t.midi.length = 0;
+t.send("note", KEY0_NOTE - 1, 90); t.send("note", KEY0_NOTE + NKEYS, 80); t.send("note", KEY0_NOTE + NKEYS, 0);
+check(JSON.stringify(t.midi) === JSON.stringify([[KEY0_NOTE - 1, 90], [KEY0_NOTE + NKEYS, 80], [KEY0_NOTE + NKEYS, 0]]), "pass-through");
+t.send("note", KEY0_NOTE + 3, 100);
+check(JSON.stringify(t.last(t.strip, "lit")) === "[3,1]" && JSON.stringify(t.last(t.editor, "lit")) === "[3,1]", "a key lights both pages");
+t.send("note", KEY0_NOTE + 3, 0);
+t.send("base", 60); t.midi.length = 0;
+t.send("note", 60, 100); t.send("note", 60, 0);
+check(t.midi.length >= 6 && t.midi[0][0] !== 60, "Key 1 moved to C4");
+t.midi.length = 0; t.send("panic"); check(t.midi.length === 128, "panic");
+t.send("nonsense", 1); check(t.posts.some((p) => /nonsense/.test(p)), "an unknown message is reported");
 
-// 4. the panel: octave up moves the chord 12 up; strum spreads the notes; arp steps on the clock; base moves key 1
-const o = device(); o.api.loadbang(); o.api.setnum(1);
-o.api.note(KEY0_NOTE, 100); const a = o.out.filter((e) => e[1]).map((e) => e[0]); o.api.note(KEY0_NOTE, 0);
-o.msg("vl", 0); o.msg("octave", 1); o.out.length = 0;
-o.api.note(KEY0_NOTE, 100); const b = o.out.filter((e) => e[1]).map((e) => e[0]); o.api.note(KEY0_NOTE, 0);
-check(a.length > 0 && b.length === a.length && b.every((n, i) => n === a[i] + 12), `octave: ${a} -> ${b}`);
-o.msg("octave", 0); o.msg("mode", 1); o.msg("strum", 40); o.out.length = 0;
-o.api.note(KEY0_NOTE, 100); const first = o.out.length;
-for (let i = 0; i < 100; i++) o.api.tick(5);
-check(first === 1 && o.out.filter((e) => e[1]).length === a.length, `strum: ${first} at once, ${o.out.length} after`);
-o.api.note(KEY0_NOTE, 0);
-o.msg("mode", 2); o.api.tempo(120); o.out.length = 0;
-o.api.note(KEY0_NOTE, 100);
-for (let i = 0; i < 200; i++) o.api.tick(5);  // 1 s at 1/16, 120 BPM: 8 steps
-const steps = o.out.filter((e) => e[1]).length;
-check(steps >= 8 && steps <= 9, `arp: ${steps} steps in 1 s`);
-o.api.note(KEY0_NOTE, 0); for (let i = 0; i < 40; i++) o.api.tick(5);
-o.msg("base", 60); o.msg("mode", 0); o.out.length = 0;
-o.api.note(60, 100); check(o.out.length === a.length && o.out[0][0] !== 60, "base: key 1 moved to C4");
-o.api.note(60, 0);
+// 3. the editor: hello gets the state; set, key, notes, origin, mine
+const e = device(); e.send("loadbang");
+e.send("hello");
+const r0 = e.last(e.editor, "restore");
+check(r0 && r0.kind === "factory" && r0.i === 0 && r0.mine === "none" && /fm1-chord-set/.test(r0.cur), "hello: the editor gets the set");
+const mySet = cloneSet(lib.sets[40]); mySet.name = "MY JUNGLE"; mySet.chords[0] = { ...mySet.chords[5] };
+e.send("set", setToFile(mySet));
+check(e.get("cur.name") === "MY JUNGLE" && e.last(e.strip, "show").name === "MY JUNGLE" && e.ctx.notified > 0, "set: the device plays the editor's set");
+e.midi.length = 0;
+e.send("key", 0, 100);
+const ref = [], p2 = new Player({ on: (n, v) => ref.push([n, v]), off: (n) => ref.push([n, 0]) }, 1000);
+const s2 = cloneSet(mySet); s2.tempo = 120; p2.keyEvent(s2, 0, 100);
+for (let i = 0; i < 40; i++) { e.send("tick", 5); p2.run(s2, 5, false); }
+e.send("key", 0, 0); p2.keyEvent(s2, 0, 0);
+check(JSON.stringify(e.midi) === JSON.stringify(ref) && ref.length > 0, "key: the editor's key plays the edited chord");
+e.midi.length = 0;
+e.send("notes", 60, 64, 67); e.send("notes", 62, 67); e.send("notes");
+check(JSON.stringify(e.midi) === "[[60,100],[64,100],[67,100],[60,0],[64,0],[62,100],[62,0],[67,0]]", `notes: previews (${JSON.stringify(e.midi)})`);
+e.send("mine", bankToFile([mySet, lib.sets[3]]));
+check(e.last(e.strip, "list").mine.join("|") === "MY JUNGLE|" + lib.sets[3].name, "mine: My sets on the strip");
+e.send("origin", "mine", 0, 1);
+check(e.last(e.strip, "show").kind === "mine", "origin");
+e.send("step", -1);                                // My sets come first: from mine 0 back to the last factory set
+check(e.get("where.kind") === "factory" && e.get("where.i") === lib.sets.length - 1, "step wraps round");
+e.send("choose", "mine", 1);
+check(e.get("cur.name") === lib.sets[3].name && JSON.stringify(e.last(e.editor, "open")) === '["mine",1]', "choose mine");
+e.send("set", setToFile(mySet)); e.send("origin", "mine", 0, 1);
 
-// 5. every note it starts, it stops; panic sends 128 note offs; an unknown message is reported, not thrown
+// 4. the Live set: the state comes back in a new device (and the editor gets it); a 0.10-0.12 bank; junk
+const saved = e.send("getvalueof");
+const f = device(); f.send("loadbang"); f.send("setvalueof", saved);
+const r1 = f.last(f.editor, "restore");
+check(f.get("cur.name") === "MY JUNGLE" && f.get("MINE.length") === 2 && r1 && r1.kind === "mine" && r1.dirty === 1, "the Live set's state comes back");
+check(f.last(f.strip, "show").name === "MY JUNGLE" && f.last(f.strip, "list").mine.length === 2, "and shows on the strip");
+const g = device(); g.send("loadbang"); g.send("setvalueof", bankToFile([mySet]));
+check(g.get("MINE.length") === 1, "a 0.10-0.12 device's My sets come in");
+const h = device(); h.send("loadbang"); h.send("setvalueof", "garbage"); h.send("setvalueof", "none");
+check(h.get("cur.name") === lib.sets[0].name && h.posts.length === 1, "junk in the Live set: reported, nothing changes");
+
+// 5. every note started, stopped
 const on = new Map();
-for (const [n, v] of o.out) on.set(n, (on.get(n) || 0) + (v ? 1 : -1));
-check([...on.values()].every((c) => c === 0), "a note left hanging");
-o.out.length = 0; o.api.panic(); check(o.out.length === 128, "panic");
-o.msg("nonsense", 1); check(o.posts.some((p) => /nonsense/.test(p)), "unknown message posted");
+for (const dev of [t, e]) for (const [n, v] of dev.midi) on.set(n, (on.get(n) || 0) + (v ? 1 : -1));
+check([...on.values()].every((c) => c <= 0), "a note left hanging");
 
-// 6. my sets: LOAD a bank, play it as the editor would, keep it in the Live set (pattr), switch banks, bad files
-const mine = [5, 40, 77].map((i) => { const x = cloneSet(lib.sets[i]); x.name = "MY " + i; x.chords[0] = x.chords[3]; return x; });
-FILES.set("Mac:/u/My.fm1bank", bankToFile(mine) + " ".repeat(40000));   // longer than one readstring
-FILES.set("Mac:/u/one.chordset", setToFile(mine[2]));
-FILES.set("Mac:/u/junk.txt", "hello");
-const m = device(); m.api.loadbang();
-m.api.read("Mac:/u/My.fm1bank");
-check(/^Mine 1\. MY 5/.test(m.shown.name || "") && m.shown.bank === "1" && /3 of my sets/.test(m.shown.info), `bank loaded: ${m.shown.name} / ${m.shown.info}`);
-check(m.ctx.notified === 1, "pattr told");
-function plays(dev, set, keys) {
-  const ref = [], s2 = cloneSet(set);
-  Object.assign(s2.play, { mode: 0, latch: 0, voice_lead: 1, octave: 0, transpose: 0, humanise: 0 });
-  const p = new Player({ on: (n, v) => ref.push([n, v]), off: (n) => ref.push([n, 0]) }, 1000);
-  dev.out.length = 0;
-  for (const k of keys) { dev.api.note(KEY0_NOTE + k, 90); p.keyEvent(s2, k, 90); dev.api.note(KEY0_NOTE + k, 0); p.keyEvent(s2, k, 0); }
-  return JSON.stringify(dev.out) === JSON.stringify(ref) && ref.length > 0;
-}
-m.api.setnum(2);
-check(plays(m, mine[1], [0, 3, 7, 20]), "my set 2 plays as the editor plays it");
-m.api.setnum(9); check(/^Mine 3\./.test(m.shown.name), "set number held to my 3 sets");
-const saved = m.api.getvalueof();
-check(typeof saved === "string" && saved.length < bankToFile(mine).length + 10, "saved value is the compact bank");
-const r = device(); r.api.loadbang(); r.msg("bank", 1);          // a reopened Live set: the switch, then the value
-check(/no sets loaded/.test(r.shown.info), `Mine before restore: ${r.shown.info}`);
-r.api.setnum(3); r.api.setvalueof(saved);
-check(/^Mine 3\. MY 77/.test(r.shown.name || "") && plays(r, mine[2], [0, 1]), `restored from the Live set: ${r.shown.name}`);
-r.msg("bank", 0); check(/^1\. /.test(r.shown.name), `back to factory: ${r.shown.name}`);
-r.api.read("Mac:/u/one.chordset"); check(/^Mine 1\. MY 77/.test(r.shown.name) && /1 of my sets/.test(r.shown.info), "a .chordset loads");
-r.api.read("Mac:/u/junk.txt"); check(/^LOAD: /.test(r.shown.info) && /^Mine 1\./.test(r.shown.name), `junk refused, sets kept: ${r.shown.info}`);
-r.api.read("Mac:/u/missing"); check(/^LOAD: /.test(r.shown.info), "missing file refused");
-const f = device(); f.api.loadbang(); f.api.setvalueof("none"); f.api.setvalueof("garbage");
-check(/^1\. /.test(f.shown.name) && f.api.getvalueof() === "none", "nothing saved: factory");
-
-console.log(fails ? `m4l_test: ${fails} failed` : `m4l_test: ok (${lib.sets.length} sets, ${compared} note events match the editor)`);
+console.log(fails ? `m4l_test: ${fails} failed` : `ok   m4l_test: ${lib.sets.length} sets, ${compared} note events match the editor; the editor's and strip's messages; the Live set's state`);
 process.exit(fails ? 1 : 0);

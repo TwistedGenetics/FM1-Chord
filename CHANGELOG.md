@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13
+
+- **The Ableton device is now the editor.** The device's strip (on the track) shows the set (pick any, or step
+  with the arrows), the chord playing in big letters and the 27 keys lit as they play; click a key to hear it.
+  **EDITOR** opens the whole FM1-Chord editor in its own window: every factory set and My sets, chord editing,
+  suggestions with the colour-coded help, Expand my progression, playing (chord, strum, arpeggio), progressions,
+  pasting chords. Every key and every change plays on the track's instrument straight away; choosing a set on the
+  strip or in the editor shows on the other. Save keeps a set in My sets; the set playing and My sets are saved
+  with the Live set (a 0.10-0.12 device's My sets carry over).
+- In Live the editor leaves out what's only for the FM-1 (its sound, its connection) and asks no questions:
+  leaving a changed set keeps the changes in My sets, Delete wants a second press.
+- The release zip holds four files that stay together: FM1-Chord.amxd, fm1chord.js, FM1-Chord-strip.html,
+  FM1-Chord-editor.html (the editor's page, made from web/editor on every release).
+- Tests: tests/host/m4l_test runs the device's code with Max faked (every set against the editor's player, every
+  message, the Live set's state); tests/host/m4l_pages runs device, strip and editor together in headless Chrome.
+
 ## 0.12
 
 - **Less CPU, no break-ups.** The first readings from a real FM-1 (F PHRYGIAN DARK, DARK PAD: PEAK 114 %, 14 drops)

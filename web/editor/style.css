@@ -256,3 +256,6 @@ dialog#imp::backdrop { background: rgba(14, 16, 18, .8); }
 .seg button.t-amber { border-color: var(--a-bd); box-shadow: inset 0 -4px 0 var(--a-bd); }
 .seg button.t-red { border-color: #6b3532; box-shadow: inset 0 -4px 0 var(--r-bd); }
 .seg button.on.t-green, .seg button.on.t-amber, .seg button.on.t-red { color: var(--ink); background: var(--selbg); }
+
+/* in the Ableton device (host.js): no links out of it */
+body.host footer { display: none; }
