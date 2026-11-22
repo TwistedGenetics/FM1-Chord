@@ -142,7 +142,8 @@ export class Synth {
   tsec(v) { return 0.001 * exp2(v * (13 / 127)); }
   env(a, d, s, r) {
     const R = this.rate;
-    return { a: 1 / (this.tsec(a) * R), d: exp2(-9.966 / (this.tsec(d) * R)), s: s / 127, r: exp2(-9.966 / (this.tsec(r) * R)) };
+    return { a: 1 / (this.tsec(a) * R), d: exp2(-9.966 / (this.tsec(d) * R)), s: s / 127, r: exp2(-9.966 / (this.tsec(r) * R)),
+      d16: exp2(-9.966 * CTRL / (this.tsec(d) * R)), r16: exp2(-9.966 * CTRL / (this.tsec(r) * R)) };
   }
   sound(o, x = defaultSx(), t = defaultS3()) {
     this.sx = x;
@@ -224,6 +225,18 @@ export class Synth {
       default: return 0;
     }
   }
+  // fc_synth.c env_skip: an envelope read once per block, stepped m samples at once
+  static skip(e, c, v, which, m) {
+    if (m === CTRL)
+      switch (v[which]) {
+        case 0: return 0;
+        case 1: if (e + c.a * CTRL < 1) return e + c.a * CTRL; break;
+        case 2: if (e === c.s) return e; e = c.s + (e - c.s) * c.d16; return Math.abs(e - c.s) < 1e-6 ? c.s : e;
+        default: e *= c.r16; if (e < 1e-4) { e = 0; v[which] = 0; } return e;
+      }
+    for (let j = 0; j < m; j++) e = Synth.step(0, e, c, v, which);
+    return e;
+  }
   src(v, src, blk) {
     switch (src) {
       case MS.LFO1: return this.lfoBlk[0][blk];
@@ -250,6 +263,7 @@ export class Synth {
   voice(v, mono, n) {
     const nyq = 0.45 * this.rate, mode = this.sx.flt_mode, slope = this.sx.flt_slope, R2 = 1.41421356;
     const md = new Float32Array(MD.N);
+    const perSample = this.omode === OM.SYNC || (this.wa === W.NOISE && this.wb === W.NOISE);   // voice_render_ps
     for (let i = 0; i < n; i += CTRL) {
       const m = Math.min(CTRL, n - i), blk = (i / CTRL) | 0;
       md.fill(0);
@@ -295,9 +309,15 @@ export class Synth {
           y = Synth.svfOut(mode, y, mode === 1 ? R2 * w1 : w1, w2, R2);
         }
         v.ea = Synth.step(0, v.ea, this.amp, v, "sa");
-        v.ef = Synth.step(0, v.ef, this.flt, v, "sf");
-        if (this.useMenv) v.em = Synth.step(0, v.em, this.menv, v, "sm");
+        if (perSample) {
+          v.ef = Synth.step(0, v.ef, this.flt, v, "sf");
+          if (this.useMenv) v.em = Synth.step(0, v.em, this.menv, v, "sm");
+        }
         mono[i + j] += y * v.ea * gain;
+      }
+      if (!perSample) {                     // as the firmware's staged voice (0.12): once per block
+        v.ef = Synth.skip(v.ef, this.flt, v, "sf", m);
+        if (this.useMenv) v.em = Synth.skip(v.em, this.menv, v, "sm", m);
       }
       if (!v.sa) break;
     }

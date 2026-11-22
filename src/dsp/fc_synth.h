@@ -17,6 +17,7 @@
 
 typedef struct {
     float a, d, s, r;               /* coefficients per sample (a: linear rise per sample; d, r: exponential) */
+    float d16, r16;                 /* d and r over FC_CTRL samples: the filter and mod envelopes step a block at once */
 } fc_env_c;
 
 typedef struct {
@@ -49,7 +50,9 @@ typedef struct {
     float level, cut_st, fenv_st, track, res, detune_c, bl, sub, fm, vs, drive;
     uint32_t wa, wb;
     uint32_t age, maxv;              /* voices it may use (fc_synth_voices) */
-    uint32_t gmax, gcool;            /* the CPU guard's cap on that, and how long the CPU has been easy */
+    uint32_t gmax, gcool, gcap;     /* gcap: the cap now (model and net) */
+               /* the CPU guard's cap on that, and how long the CPU has been easy */
+    float g_base, g_voice;           /* the guard's model: % of a block for the effects, and for each voice */
     /* modulation: the matrix's slots in use, split into those for each voice and those for the whole synth */
     uint8_t mv_src[FC_NMOD], mv_dst[FC_NMOD], mg_src[FC_NMOD], mg_dst[FC_NMOD];
     float mv_amt[FC_NMOD], mg_amt[FC_NMOD];
@@ -71,6 +74,7 @@ typedef struct {
     uint32_t rv_cl[2][FC_RV_NC], rv_al[2][FC_RV_NA], rv_ci[2][FC_RV_NC], rv_ai[2][FC_RV_NA];
     float rv_cs[2][FC_RV_NC], rv_fb, rv_damp, rv_mix;
     float mono[FC_BLOCK];           /* one block's voices, before the chorus */
+    float fx_l[FC_BLOCK], fx_r[FC_BLOCK], rv_out[2][FC_BLOCK];   /* the effects' stages, a block at a time */
 } fc_synth_t;
 
 /* the reverb's and the delay's memory (given to fc_synth_init, so it can live in the FM-1's pool RAM) */
@@ -86,7 +90,8 @@ void fc_synth_all_off(fc_synth_t *s);
 /* adds nothing: writes n stereo frames (interleaved L R) in -1..1 */
 void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n);
 uint32_t fc_synth_active(const fc_synth_t *s);             /* voices sounding */
-/* the CPU guard, after every audio block, with the share of the block's time the block took (percent): from 85 %
- * it holds the synth to fewer voices (fading out the oldest beyond the cap, released ones first); below 60 % for
- * about a second, it gives one back. Returns the cap (= the voices allowed when the CPU is easy). */
+/* the CPU guard, after every audio block, with the share of the block's time the block took (percent). It learns
+ * what the effects and each voice cost with this sound and holds the voices to what fits in 80 % (so a new chord
+ * over the last one's tails steals them instead of breaking up); a block over 90 % takes one more off, given back
+ * after about a second at ease. Voices over the cap fade out (released ones first). Returns the cap. */
 uint32_t fc_synth_guard(fc_synth_t *s, uint32_t pct);

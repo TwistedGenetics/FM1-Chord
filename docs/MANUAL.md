@@ -43,9 +43,9 @@ HOME twice gives four knobs that do the useful thing for that sound. LO-FI (FX t
 the 80s or 90s (the editor has SP-1200, MPC60, S950 and Amiga settings), wobbles like tape, and phases; the chorus
 has three modes (I, II, I+II) in the editor.
 
-If the sound stutters or crackles, **GLOBAL** twice shows the CPU. Above about 85 % the FM-1 plays fewer voices by
-itself (VOICES then shows, say, 6/10) and fades out the oldest notes, so the sound doesn't break up; it gives the
-voices back after a second or so of ease. DROPS counts the times it broke up anyway. Lowering **VOICES** there
+If the sound stutters or crackles, **GLOBAL** twice shows the CPU. The FM-1 learns what each voice of the sound
+costs and plays only as many as fit (VOICES then shows, say, 7/10), fading out the oldest tails first, so the sound
+doesn't break up; it gives voices back when there's room. DROPS counts the times it broke up anyway. Lowering **VOICES** there
 keeps a heavy sound well clear.
 
 **Paste chords (editor, 0.4).** *Paste chords* reads chord sets from text (a note, a chart, a forum post): one set per

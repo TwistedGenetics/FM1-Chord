@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.12
+
+- **Less CPU, no break-ups.** The first readings from a real FM-1 (F PHRYGIAN DARK, DARK PAD: PEAK 114 %, 14 drops)
+  showed the synth asking for more than the FM-1 has when a new chord starts over the last one's tails.
+  - The synth does each voice's work a stage at a time over 16 samples, with every decision made once per block
+    instead of every sample; the organs read one table instead of three sines; the supersaw and wavetables work
+    out their steps and frames once a block; the reverb runs from local state. The same sound (the editor's synth
+    still matches within 0.6 %), about a quarter less work on average and a third less for the heaviest sounds
+    (DARK PAD about 77 % of 0.11's cost).
+  - The CPU guard now learns what the effects and each voice cost with the sound playing and holds the voices to
+    what fits in 80 % of the time, so a new chord takes over the oldest tails instead of piling on top of them. A
+    block over 90 % still takes one more voice off. VOICES on GLOBAL 2 shows, say, 7/10 while it does.
+
 ## 0.11
 
 - **Stutter fix.** Whenever the sound went quiet (between notes, at the end of a tail, holding a low pulse or square

@@ -84,40 +84,48 @@ int main(void)
     printf("skip cpu_test: denormal flags (not an x86 host)\n");
 #endif
 
-    /* the guard */
-    fc_synth_init(&syn, rv, dly);
-    fc_synth_sound(&syn, &FC_SOUNDS[0].snd, &FC_SOUNDS[0].sx, &FC_SOUNDS[0].s3);
-    for (i = 0; i < 10u; i++)
-        fc_synth_on(&syn, 40u + 3u * i, 100u);
-    fc_synth_render(&syn, buf, 128);
-    CHECK(fc_synth_active(&syn) == 10u, "ten voices to start (%u)", fc_synth_active(&syn));
-    n = fc_synth_guard(&syn, 97u);
-    CHECK(n == 9u, "one overloaded block: cap 9 (%u)", n);
-    for (k = 0; k < 4u; k++)
-        n = fc_synth_guard(&syn, 97u);
-    CHECK(n == 5u, "five overloaded blocks: cap 5 (%u)", n);
-    for (k = 0; k < 12u; k++)                     /* 12 x 128 samples = 35 ms: the shed voices have faded */
-        fc_synth_render(&syn, buf, 128);
-    CHECK(fc_synth_active(&syn) == 5u, "five sound after the fade (%u)", fc_synth_active(&syn));
-    fc_synth_on(&syn, 90u, 100u);                 /* at the cap a new note steals, it doesn't add */
-    fc_synth_render(&syn, buf, 128);
-    for (k = 0; k < 12u; k++)
-        fc_synth_render(&syn, buf, 128);
-    CHECK(fc_synth_active(&syn) <= 6u, "a new note at the cap: %u sounding", fc_synth_active(&syn));
-    for (k = 0; k < 20u; k++)
-        n = fc_synth_guard(&syn, 99u);
-    CHECK(n == 3u, "never below 3 (%u)", n);
-    for (k = 0; k < 86u * 3u; k++)
-        n = fc_synth_guard(&syn, 70u);
-    CHECK(n == 3u, "60..85 %%: held where it is (%u)", n);
-    for (k = 0; k < 86u * 3u; k++)
-        n = fc_synth_guard(&syn, 30u);
-    CHECK(n == 6u, "three easy seconds: three back (%u)", n);
-    for (k = 0; k < 86u * 10u; k++)
-        n = fc_synth_guard(&syn, 30u);
-    CHECK(n == 10u, "all ten back (%u)", n);
-    fc_synth_voices(&syn, 6u);
-    CHECK(fc_synth_guard(&syn, 30u) == 6u, "never over VOICES");
-    printf(fails ? "cpu_test: %d failed\n" : "ok   cpu_test: the guard sheds and gives back voices\n", fails);
+    /* the guard: a pretend FM-1 where the effects take BASE % of a block and each voice VOICE %; five-note chords
+     * changed every half second over the last one's tails (DARK PAD: long release). After the first chord it must
+     * keep every block under 90 %, and give the voices back when they are cheap */
+    {
+        static const double cost[3][2] = {{15.f, 12.f}, {20.f, 22.f}, {10.f, 4.f}};   /* heavy, very heavy, light */
+        unsigned c;
+        for (c = 0; c < 3u; c++) {
+            unsigned over = 0, worst = 0, blocks_n = 0, cap = 10u, chord;
+            fc_synth_init(&syn, rv, dly);
+            fc_synth_sound(&syn, &FC_SOUNDS[1].snd, &FC_SOUNDS[1].sx, &FC_SOUNDS[1].s3);
+            for (chord = 0; chord < 16u; chord++) {
+                for (i = 0; i < 5u; i++)
+                    fc_synth_on(&syn, 48u + (chord % 3u) * 2u + i * 4u, 100u);
+                for (k = 0; k < 43u; k++) {           /* 43 blocks of 512: half a second */
+                    unsigned pct, nn;
+                    for (n = 0; n < 4u; n++)
+                        fc_synth_render(&syn, buf, 128);
+                    nn = fc_synth_active(&syn);
+                    pct = (unsigned)(cost[c][0] + cost[c][1] * (double)nn);
+                    if (chord > 0u) {
+                        if (pct >= 90u)
+                            over++;
+                        if (pct > worst)
+                            worst = pct;
+                    }
+                    blocks_n++;
+                    cap = fc_synth_guard(&syn, pct);
+                }
+                for (i = 0; i < 5u; i++)
+                    fc_synth_off(&syn, 48u + (chord % 3u) * 2u + i * 4u);
+            }
+            if (c < 2u)
+                CHECK(over == 0u, "cost %.0f+%.0f/voice: %u of %u blocks over 90 %% (worst %u %%)", cost[c][0], cost[c][1],
+                      over, blocks_n, worst);
+            else
+                CHECK(cap == 10u, "cheap voices: all ten allowed (%u)", cap);
+            printf("     guard: effects %2.0f %%, voice %2.0f %%: cap %2u, worst block after the first chord %3u %%\n",
+                   cost[c][0], cost[c][1], cap, worst);
+        }
+        fc_synth_voices(&syn, 6u);
+        CHECK(fc_synth_guard(&syn, 30u) <= 6u, "never over VOICES");
+    }
+    printf(fails ? "cpu_test: %d failed\n" : "ok   cpu_test: the guard keeps every block under 90 %% once it knows the sound\n", fails);
     return fails ? 1 : 0;
 }

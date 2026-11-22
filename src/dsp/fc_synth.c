@@ -19,6 +19,8 @@ static void env_coefs(fc_env_c *e, uint32_t a, uint32_t d, uint32_t s, uint32_t 
     e->d = fc_exp2f(-9.966f / (t_sec(d) * FSF));      /* -60 dB in the time */
     e->s = (float)s * (1.f / 127.f);
     e->r = fc_exp2f(-9.966f / (t_sec(r) * FSF));
+    e->d16 = fc_exp2f(-9.966f * (float)FC_CTRL / (t_sec(d) * FSF));
+    e->r16 = fc_exp2f(-9.966f * (float)FC_CTRL / (t_sec(r) * FSF));
 }
 
 /* what a full (127) matrix amount does to each destination; pitch goes by the square of the amount, so small
@@ -138,6 +140,7 @@ void fc_synth_tempo(fc_synth_t *s, float bpm)
     lfo_rates(s);
 }
 
+static void org_init(void);
 void fc_synth_init(fc_synth_t *s, float *mem, int16_t *dly)
 {
     static const uint16_t CL[FC_RV_NC] = {1116, 1188, 1277, 1356}, AL[FC_RV_NA] = {556, 441};
@@ -174,8 +177,11 @@ void fc_synth_init(fc_synth_t *s, float *mem, int16_t *dly)
     fc_sound3_default(&d3);
     s->wob = 1.f;
     s->maxv = FC_VOICES;
-    s->gmax = FC_VOICES;
+    s->gmax = s->gcap = FC_VOICES;
+    s->g_base = 20.f;
+    s->g_voice = 6.f;
     fc_synth_sound(s, &d, &dx, &d3);
+    org_init();
 }
 
 static float note_hz(uint32_t n) { return 440.f * fc_exp2f(((float)n - 69.f) * (1.f / 12.f)); }
@@ -193,7 +199,7 @@ void fc_synth_on(fc_synth_t *s, uint32_t note, uint32_t vel)
         }
     }
     if (!v) {
-        uint32_t cap = s->maxv < s->gmax ? s->maxv : s->gmax, n = 0;
+        uint32_t cap = s->maxv < s->gcap ? s->maxv : s->gcap, n = 0;
         fc_voice_t *fr = 0;
         for (i = 0; i < FC_VOICES; i++) {
             fc_voice_t *x = &s->v[i];
@@ -287,31 +293,31 @@ static uint32_t sounding(const fc_synth_t *s)    /* voices playing that the guar
 
 uint32_t fc_synth_guard(fc_synth_t *s, uint32_t pct)
 {
-    uint32_t i, n, lim = s->maxv < s->gmax ? s->maxv : s->gmax;
-    if (pct >= 85u) {
+    uint32_t i, n = sounding(s), lim, fit;
+    float p = (float)pct, est;
+    /* the model: a block with no voices is the effects; with voices, what each costs over that (quick to learn
+     * a heavier sound, slow to trust a lighter one) */
+    if (n == 0u)
+        s->g_base += 0.1f * (p - s->g_base);
+    else {
+        est = (p - s->g_base) / (float)n;
+        if (est > s->g_voice)
+            s->g_voice += 0.5f * (est - s->g_voice);
+        else
+            s->g_voice += 0.03f * (est - s->g_voice);
+        if (s->g_voice < 1.f)
+            s->g_voice = 1.f;
+    }
+    fit = s->g_base < 77.f ? (uint32_t)((80.f - s->g_base) / s->g_voice) : 3u;
+    if (fit < 3u)
+        fit = 3u;
+    /* and the safety net: a block over 90 % takes one more off; a second at ease gives one back */
+    if (pct >= 90u) {
         s->gcool = 0;
-        n = sounding(s);
-        if (n > 3u && n - 1u < lim)
-            lim = n - 1u;
-        else if (lim > 3u)
-            lim--;
-        s->gmax = lim;
-        for (; n > lim; n--) {                      /* fade out the rest: released ones first, then the oldest */
-            fc_voice_t *w = 0;
-            for (i = 0; i < FC_VOICES; i++) {
-                fc_voice_t *x = &s->v[i];
-                if (!x->stage_a || x->shed)
-                    continue;
-                if (!w || (x->stage_a == 3u) > (w->stage_a == 3u) ||
-                    ((x->stage_a == 3u) == (w->stage_a == 3u) && x->age < w->age))
-                    w = x;
-            }
-            if (!w)
-                break;
-            w->shed = 1;
-            w->on = 0;
-            w->stage_a = w->stage_f = w->stage_m = 3;
-        }
+        if (s->gmax > n && n > 3u)
+            s->gmax = n;
+        if (s->gmax > 3u)
+            s->gmax--;
     } else if (pct < 60u) {
         if (++s->gcool >= 86u && s->gmax < FC_VOICES) {   /* 86 FM-1 blocks of 512 samples: a second */
             s->gmax++;
@@ -319,7 +325,27 @@ uint32_t fc_synth_guard(fc_synth_t *s, uint32_t pct)
         }
     } else
         s->gcool = 0;
-    return s->maxv < s->gmax ? s->maxv : s->gmax;
+    if (s->gmax > fit + 1u)                         /* the net never sits far above the model */
+        s->gmax = fit + 1u;
+    lim = s->gmax < fit ? s->gmax : fit;
+    s->gcap = lim;
+    for (; n > lim; n--) {                          /* fade out the rest: released ones first, then the oldest */
+        fc_voice_t *w = 0;
+        for (i = 0; i < FC_VOICES; i++) {
+            fc_voice_t *x = &s->v[i];
+            if (!x->stage_a || x->shed)
+                continue;
+            if (!w || (x->stage_a == 3u) > (w->stage_a == 3u) ||
+                ((x->stage_a == 3u) == (w->stage_a == 3u) && x->age < w->age))
+                w = x;
+        }
+        if (!w)
+            break;
+        w->shed = 1;
+        w->on = 0;
+        w->stage_a = w->stage_f = w->stage_m = 3;
+    }
+    return s->maxv < lim ? s->maxv : lim;
 }
 
 uint32_t fc_synth_active(const fc_synth_t *s)
@@ -473,7 +499,8 @@ static inline float svf_out(uint32_t mode, float x, float v1, float v2, float k)
     }
 }
 
-static void voice_render(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
+/* the voice sample by sample: every case (sync, and noise on both oscillators, need it) */
+static void voice_render_ps(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
 {
     uint32_t i, j, q, mode = s->sx.flt_mode, slope = s->sx.flt_slope;
     for (i = 0; i < n; i += FC_CTRL) {
@@ -579,6 +606,313 @@ static void voice_render(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
     }
 }
 
+/* ---- the voice a stage at a time over each control block (0.12): the same sound as voice_render_ps, but each
+ * decision (wave, mode, filter type, envelope stage) once per 16 samples instead of every sample, in tight loops
+ * an in-order CPU runs far faster; the filter and mod envelopes, which steer only the block's cutoff and
+ * modulation, step 16 samples at once ---- */
+
+/* an envelope that is read once per block: n samples at once (closed forms for a whole FC_CTRL block) */
+static inline float env_skip(uint8_t *st, float e, const fc_env_c *c, uint32_t n)
+{
+    uint32_t j;
+    if (n == FC_CTRL)
+        switch (*st) {
+        case 0:
+            return 0.f;
+        case 1:
+            if (e + c->a * (float)FC_CTRL < 1.f)
+                return e + c->a * (float)FC_CTRL;
+            break;
+        case 2:
+            if (e == c->s)
+                return e;
+            e = c->s + (e - c->s) * c->d16;
+            return (e - c->s < 1e-6f && c->s - e < 1e-6f) ? c->s : e;
+        default:
+            e *= c->r16;
+            if (e < 1e-4f) {
+                e = 0.f;
+                *st = 0;
+            }
+            return e;
+        }
+    for (j = 0; j < n; j++)
+        e = env_step(st, e, c);
+    return e;
+}
+
+/* m samples of one oscillator into out, its phase moving on; fmv: A's phase offset per sample (FM), or 0 */
+#define OSC_LOOP(EXPR)                                                      \
+    for (j = 0; j < m; j++) {                                               \
+        float pp = fmv ? wrap1(p + fm * fmv[j]) : p;                        \
+        out[j] = (EXPR);                                                    \
+        (void)pp;                                                           \
+        p += inc;                                                           \
+        if (p >= 1.f)                                                       \
+            p -= 1.f;                                                       \
+    }
+static inline float wt_at(const int16_t *f0, const int16_t *f1, float u, float p)
+{
+    float x = p * (float)FC_WT_N, w, a, b;
+    uint32_t j = (uint32_t)x, j1;
+    w = x - (float)j;
+    j &= FC_WT_N - 1u;
+    j1 = (j + 1u) & (FC_WT_N - 1u);
+    a = (float)f0[j] + ((float)f0[j1] - (float)f0[j]) * w;
+    b = (float)f1[j] + ((float)f1[j1] - (float)f1[j]) * w;
+    return a + (b - a) * u;
+}
+
+/* the organ's drawbars as one table (filled at init from the same sines): one lookup a sample, not three sines */
+#define ORG_N 1024u
+static float org_tab[ORG_N + 1u];
+static void org_init(void)
+{
+    uint32_t i;
+    for (i = 0; i <= ORG_N; i++)
+        org_tab[i] = osc(FC_W_ORGAN, (float)(i % ORG_N) * (1.f / (float)ORG_N), 0.f, 0.f);
+}
+static inline float organ(float p)
+{
+    float x = p * (float)ORG_N;
+    uint32_t i = (uint32_t)x;
+    if (i >= ORG_N)
+        i = ORG_N - 1u;
+    return org_tab[i] + (org_tab[i + 1u] - org_tab[i]) * (x - (float)i);
+}
+
+static void osc_block(fc_synth_t *s, uint32_t w, float *ph, float inc, float pw, float *ss, float spr, float pos,
+                      const float *fmv, float fm, float *out, uint32_t m)
+{
+    uint32_t j;
+    float p = *ph;
+    switch (w) {
+    case FC_W_SQUARE:
+    case FC_W_PULSE: {
+        float h = fc_clampf((w == FC_W_SQUARE ? 0.5f : 0.25f) + pw, 0.04f, 0.96f), dc = 2.f * h - 1.f;
+        OSC_LOOP((pp < h ? 1.f : -1.f) + blep(pp, inc) - blep(pp < h ? pp + 1.f - h : pp - h, inc) - dc)
+        break;
+    }
+    case FC_W_TRI:
+        OSC_LOOP(pp < 0.5f ? 4.f * pp - 1.f : 3.f - 4.f * pp)
+        break;
+    case FC_W_SINE:
+        OSC_LOOP(fc_sin_turn(pp))
+        break;
+    case FC_W_ORGAN:
+        OSC_LOOP(organ(pp))
+        break;
+    case FC_W_SUPERSAW: {                           /* supersaw(): the six around it with their steps worked out once */
+        float si[6], g = (0.15f + 0.25f * spr) * 0.55f, q0 = ss[0], q1 = ss[1], q2 = ss[2], q3 = ss[3], q4 = ss[4],
+              q5 = ss[5];
+        uint32_t c;
+        for (c = 0; c < 6u; c++)
+            si[c] = inc * (1.f + SS_OFF[c] * spr);
+        for (j = 0; j < m; j++) {
+            float pp = fmv ? wrap1(p + fm * fmv[j]) : p;
+            q0 += si[0]; if (q0 >= 1.f) q0 -= 1.f;
+            q1 += si[1]; if (q1 >= 1.f) q1 -= 1.f;
+            q2 += si[2]; if (q2 >= 1.f) q2 -= 1.f;
+            q3 += si[3]; if (q3 >= 1.f) q3 -= 1.f;
+            q4 += si[4]; if (q4 >= 1.f) q4 -= 1.f;
+            q5 += si[5]; if (q5 >= 1.f) q5 -= 1.f;
+            out[j] = 0.33f * (2.f * pp - 1.f - blep(pp, inc)) + g * (2.f * (q0 + q1 + q2 + q3 + q4 + q5) - 6.f);
+            p += inc;
+            if (p >= 1.f)
+                p -= 1.f;
+        }
+        ss[0] = q0; ss[1] = q1; ss[2] = q2; ss[3] = q3; ss[4] = q4; ss[5] = q5;
+        break;
+    }
+    case FC_W_NOISE:
+        OSC_LOOP(noise(s))
+        break;
+    default:
+        if (w >= FC_W_WT0) {                        /* wavetable(): the two frames and the mix once a block */
+            float f = pos * (float)(FC_WT_FRAMES - 1u), u, ku;
+            uint32_t fi = (uint32_t)f;
+            const int16_t *f0, *f1;
+            if (fi >= FC_WT_FRAMES - 1u)
+                fi = FC_WT_FRAMES - 2u;
+            u = f - (float)fi;
+            ku = 1.f / 32767.f;
+            f0 = FC_WT[w - FC_W_WT0][fi];
+            f1 = FC_WT[w - FC_W_WT0][fi + 1u];
+            OSC_LOOP(wt_at(f0, f1, u, pp) * ku)
+        } else
+            OSC_LOOP(2.f * pp - 1.f - blep(pp, inc))
+        break;
+    }
+    *ph = p;
+}
+
+static void voice_render(fc_synth_t *s, fc_voice_t *v, float *mono, uint32_t n)
+{
+    uint32_t i, j, q, mode = s->sx.flt_mode, slope = s->sx.flt_slope;
+    if (s->omode == FC_O_SYNC || (s->wa == FC_W_NOISE && s->wb == FC_W_NOISE)) {
+        voice_render_ps(s, v, mono, n);
+        return;
+    }
+    for (i = 0; i < n; i += FC_CTRL) {
+        uint32_t m = n - i < FC_CTRL ? n - i : FC_CTRL, blk = i / FC_CTRL;
+        float md[FC_NMD], xa[FC_CTRL], xb[FC_CTRL], fmv[FC_CTRL];
+        float lc, f, g, k, a1, a2, a3, b1 = 0.f, b2 = 0.f, b3 = 0.f, ia = v->inc_a, ib = v->inc_b;
+        float bl = s->bl, sub = s->sub, fm = s->fm, pw = 0.f, drv = s->drive, gain;
+        float pos = s->wt_pos, spr = s->spread, ga, gb;
+        float ic1 = v->ic1, ic2 = v->ic2, ic3 = v->ic3, ic4 = v->ic4, ea;
+        uint8_t sa;
+        for (q = 0; q < FC_NMD; q++)
+            md[q] = 0.f;
+        for (q = 0; q < s->nmv; q++)
+            md[s->mv_dst[q]] += s->mv_amt[q] * mod_src(s, v, s->mv_src[q], blk);
+        if (s->nmv || s->wob != 1.f) {
+            if (md[FC_MD_PITCH] != 0.f || md[FC_MD_DETUNE] != 0.f || md[FC_MD_BPITCH] != 0.f || s->wob != 1.f) {
+                ia = v->inc_a * fc_exp2f(md[FC_MD_PITCH] * (1.f / 12.f)) * s->wob;
+                ib = ia * s->b_ratio * fc_exp2f((s->detune_c + md[FC_MD_DETUNE]) * (1.f / 1200.f) +
+                                                md[FC_MD_BPITCH] * (1.f / 12.f));
+            }
+            pos = fc_clampf(pos + md[FC_MD_WTPOS], 0.f, 1.f);
+            spr = fc_clampf(spr + md[FC_MD_SPREAD], 0.f, 1.f);
+            bl = fc_clampf(bl + md[FC_MD_BLEV], 0.f, 1.f);
+            sub = fc_clampf(sub + md[FC_MD_SUB], 0.f, 1.f);
+            fm = fc_clampf(fm + md[FC_MD_FM], 0.f, 0.5f);
+            pw = md[FC_MD_PW];
+            drv = fc_clampf(drv + md[FC_MD_DRIVE], 0.f, 1.f);
+        }
+        gain = 0.16f * v->vel * fc_clampf(1.f + md[FC_MD_AMP], 0.f, 2.f);
+        lc = s->cut_st + (s->fenv_st + md[FC_MD_FENV]) * v->ef + s->track * v->key * (1.f / 12.f) + md[FC_MD_CUT];
+        f = fc_exp2f(lc);
+        if (f > 0.45f * FSF)
+            f = 0.45f * FSF;
+        g = fc_tanf(3.14159265f * f * (1.f / FSF));
+        k = 2.f - 1.94f * fc_clampf(s->res + md[FC_MD_RES], 0.f, 1.f);
+        a1 = 1.f / (1.f + g * (g + k));
+        a2 = g * a1;
+        a3 = g * a2;
+        if (slope) {
+            b1 = 1.f / (1.f + g * (g + 1.41421356f));
+            b2 = g * b1;
+            b3 = g * b2;
+        }
+        ga = s->omode == FC_O_ADD ? 1.f : 1.f - bl;
+        gb = s->omode == FC_O_RING ? 1.4f * bl : bl;
+
+        /* B first (A's FM reads B's phase); then A; the mix; the sub */
+        if (bl > 0.f || fm > 0.f) {
+            if (fm > 0.f) {
+                float p = v->pb;
+                for (j = 0; j < m; j++) {
+                    fmv[j] = fc_sin_turn(p);
+                    p = wrap1(p + ib);
+                }
+            }
+            if (bl > 0.f)
+                osc_block(s, s->wb, &v->pb, ib, pw, v->ssb, spr, pos, 0, 0.f, xb, m);
+            else
+                for (j = 0; j < m; j++)
+                    v->pb = wrap1(v->pb + ib);
+        } else
+            for (j = 0; j < m; j++)
+                v->pb = wrap1(v->pb + ib);
+        osc_block(s, s->wa, &v->pa, ia, pw, v->ssa, spr, pos, fm > 0.f ? fmv : 0, fm, xa, m);
+        if (bl > 0.f) {
+            if (s->omode == FC_O_RING)
+                for (j = 0; j < m; j++)
+                    xa[j] = ga * xa[j] + gb * (xa[j] * xb[j]);
+            else
+                for (j = 0; j < m; j++)
+                    xa[j] = ga * xa[j] + gb * xb[j];
+        }
+        if (sub > 0.f) {
+            float p = v->ps, si = ia * 0.5f;
+            for (j = 0; j < m; j++) {
+                xa[j] += sub * ((p < 0.5f ? 1.f : -1.f) + blep(p, si) - blep(wrap1(p + 0.5f), si));
+                p = wrap1(p + si);
+            }
+            v->ps = p;
+        } else
+            for (j = 0; j < m; j++)
+                v->ps = wrap1(v->ps + ia * 0.5f);
+        if (drv > 0.f) {
+            float dg = 0.5f + 3.5f * drv, dc = 2.f / (1.f + drv);
+            for (j = 0; j < m; j++) {
+                float u = xa[j] * dg;
+                xa[j] = dc * u / (1.f + (u < 0.f ? -u : u));
+            }
+        }
+
+        /* the filter */
+        if (!slope && mode == FC_F_LP)
+            for (j = 0; j < m; j++) {
+                float v3 = xa[j] - ic2, v1 = a1 * ic1 + a2 * v3, v2 = ic2 + a2 * ic1 + a3 * v3;
+                ic1 = 2.f * v1 - ic1 + FC_ANTI_DENORMAL;
+                ic2 = 2.f * v2 - ic2;
+                xa[j] = v2;
+            }
+        else
+            for (j = 0; j < m; j++) {
+                float x = xa[j], v3 = x - ic2, v1 = a1 * ic1 + a2 * v3, v2 = ic2 + a2 * ic1 + a3 * v3, y;
+                ic1 = 2.f * v1 - ic1 + FC_ANTI_DENORMAL;
+                ic2 = 2.f * v2 - ic2;
+                y = svf_out(mode, x, v1, v2, k);
+                if (slope) {
+                    float w3 = y - ic4, w1 = b1 * ic3 + b2 * w3, w2 = ic4 + b2 * ic3 + b3 * w3;
+                    ic3 = 2.f * w1 - ic3 + FC_ANTI_DENORMAL;
+                    ic4 = 2.f * w2 - ic4;
+                    y = svf_out(mode, y, mode == FC_F_BP ? 1.41421356f * w1 : w1, w2, 1.41421356f);
+                }
+                xa[j] = y;
+            }
+        v->ic1 = ic1;
+        v->ic2 = ic2;
+        v->ic3 = ic3;
+        v->ic4 = ic4;
+
+        /* the amp envelope, out; the filter and mod envelopes a block on */
+        ea = v->ea;
+        sa = v->stage_a;
+        if (!v->shed && sa == 2u && ea == s->amp.s) {          /* holding at the sustain */
+            float gg = ea * gain;
+            for (j = 0; j < m; j++)
+                mono[i + j] += xa[j] * gg;
+        } else if (!v->shed && sa == 2u && m == FC_CTRL &&               /* decaying, not settling in this block */
+                   ((ea - s->amp.s) * s->amp.d16 >= 1e-6f || (s->amp.s - ea) * s->amp.d16 >= 1e-6f)) {
+            float d = s->amp.d, su = s->amp.s;
+            for (j = 0; j < m; j++) {
+                ea = su + (ea - su) * d;
+                mono[i + j] += xa[j] * ea * gain;
+            }
+        } else if (!v->shed && sa == 3u && m == FC_CTRL && ea * s->amp.r16 >= 1e-4f) {   /* releasing */
+            float r = s->amp.r;
+            for (j = 0; j < m; j++) {
+                ea *= r;
+                mono[i + j] += xa[j] * ea * gain;
+            }
+        } else
+            for (j = 0; j < m; j++) {
+                ea = env_step(&sa, ea, &s->amp);
+                if (v->shed && (ea *= 0.995f) < 1e-4f) {
+                    ea = 0.f;
+                    sa = 0;
+                }
+                mono[i + j] += xa[j] * ea * gain;
+            }
+        v->ea = ea;
+        v->stage_a = sa;
+        v->ef = env_skip(&v->stage_f, v->ef, &s->flt, m);
+        if (s->use_menv)
+            v->em = env_skip(&v->stage_m, v->em, &s->menv, m);
+        if (!v->stage_a)
+            break;
+    }
+    if (!v->stage_a) {
+        v->ic1 = v->ic2 = v->ic3 = v->ic4 = 0.f;
+        v->stage_f = 0;
+        v->stage_m = 0;
+        v->em = 0.f;
+    }
+}
+
 static float lfo_val(fc_synth_t *s, uint32_t i)
 {
     float p = s->lfo_ph[i];
@@ -665,7 +999,7 @@ void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n)
             }
         }
         for (i = 0; i < k; i++) {
-            float x = mono[i], l = x, r = x, in, out[2];
+            float x = mono[i], l = x, r = x;
             /* chorus: two taps 1.5 .. 5.5 ms, a 0.5 Hz triangle, opposite on each side */
             s->ch_buf[s->ch_w & (FC_CH_LEN - 1u)] = x;
             if (ch_mix > 0.f) {
@@ -727,32 +1061,60 @@ void fc_synth_render(fc_synth_t *s, float *lr, uint32_t n)
                 r += drv * dl_mix;
             }
             s->dl_w++;
-            /* reverb */
-            if (rv_mix > 0.f) {
-                in = (l + r) * 0.015f;
-                for (c = 0; c < 2u; c++) {
-                    uint32_t qq;
-                    float acc = 0.f;
-                    for (qq = 0; qq < FC_RV_NC; qq++) {
-                        float *bf = s->rv_c[c][qq], o = bf[s->rv_ci[c][qq]];
-                        s->rv_cs[c][qq] = o * (1.f - s->rv_damp) + s->rv_cs[c][qq] * s->rv_damp + FC_ANTI_DENORMAL;
-                        bf[s->rv_ci[c][qq]] = in + s->rv_cs[c][qq] * s->rv_fb;
-                        if (++s->rv_ci[c][qq] >= s->rv_cl[c][qq])
-                            s->rv_ci[c][qq] = 0;
-                        acc += o;
-                    }
-                    for (qq = 0; qq < FC_RV_NA; qq++) {
-                        float *bf = s->rv_a[c][qq], bo = bf[s->rv_ai[c][qq]];
-                        float o = bo - acc;
-                        bf[s->rv_ai[c][qq]] = acc + bo * 0.5f + FC_ANTI_DENORMAL;
-                        if (++s->rv_ai[c][qq] >= s->rv_al[c][qq])
-                            s->rv_ai[c][qq] = 0;
-                        acc = o;
-                    }
-                    out[c] = acc;
+            s->fx_l[i] = l;                         /* the reverb next, a block at a time */
+            s->fx_r[i] = r;
+        }
+        if (rv_mix > 0.f)
+            for (c = 0; c < 2u; c++) {               /* each side: four combs then two all-passes, from locals */
+                float *b0 = s->rv_c[c][0], *b1 = s->rv_c[c][1], *b2 = s->rv_c[c][2], *b3 = s->rv_c[c][3];
+                float *a0 = s->rv_a[c][0], *a1 = s->rv_a[c][1], *o = c ? s->rv_out[1] : s->rv_out[0];
+                uint32_t i0 = s->rv_ci[c][0], i1 = s->rv_ci[c][1], i2 = s->rv_ci[c][2], i3 = s->rv_ci[c][3];
+                uint32_t l0 = s->rv_cl[c][0], l1c = s->rv_cl[c][1], l2 = s->rv_cl[c][2], l3 = s->rv_cl[c][3];
+                uint32_t j0 = s->rv_ai[c][0], j1 = s->rv_ai[c][1], m0 = s->rv_al[c][0], m1 = s->rv_al[c][1];
+                float z0 = s->rv_cs[c][0], z1 = s->rv_cs[c][1], z2 = s->rv_cs[c][2], z3 = s->rv_cs[c][3];
+                const float dmp = s->rv_damp, und = 1.f - s->rv_damp, fb = s->rv_fb;
+                for (i = 0; i < k; i++) {
+                    float in = (s->fx_l[i] + s->fx_r[i]) * 0.015f, y0 = b0[i0], y1 = b1[i1], y2 = b2[i2], y3 = b3[i3];
+                    float acc, bo, t;
+                    z0 = y0 * und + z0 * dmp + FC_ANTI_DENORMAL;
+                    z1 = y1 * und + z1 * dmp + FC_ANTI_DENORMAL;
+                    z2 = y2 * und + z2 * dmp + FC_ANTI_DENORMAL;
+                    z3 = y3 * und + z3 * dmp + FC_ANTI_DENORMAL;
+                    b0[i0] = in + z0 * fb;
+                    b1[i1] = in + z1 * fb;
+                    b2[i2] = in + z2 * fb;
+                    b3[i3] = in + z3 * fb;
+                    if (++i0 >= l0)
+                        i0 = 0;
+                    if (++i1 >= l1c)
+                        i1 = 0;
+                    if (++i2 >= l2)
+                        i2 = 0;
+                    if (++i3 >= l3)
+                        i3 = 0;
+                    acc = ((y0 + y1) + y2) + y3;
+                    bo = a0[j0];
+                    t = bo - acc;
+                    a0[j0] = acc + bo * 0.5f + FC_ANTI_DENORMAL;
+                    if (++j0 >= m0)
+                        j0 = 0;
+                    acc = t;
+                    bo = a1[j1];
+                    t = bo - acc;
+                    a1[j1] = acc + bo * 0.5f + FC_ANTI_DENORMAL;
+                    if (++j1 >= m1)
+                        j1 = 0;
+                    o[i] = t;
                 }
-                l += out[0] * rv_mix * 3.f;
-                r += out[1] * rv_mix * 3.f;
+                s->rv_ci[c][0] = i0; s->rv_ci[c][1] = i1; s->rv_ci[c][2] = i2; s->rv_ci[c][3] = i3;
+                s->rv_ai[c][0] = j0; s->rv_ai[c][1] = j1;
+                s->rv_cs[c][0] = z0; s->rv_cs[c][1] = z1; s->rv_cs[c][2] = z2; s->rv_cs[c][3] = z3;
+            }
+        for (i = 0; i < k; i++) {
+            float l = s->fx_l[i], r = s->fx_r[i];
+            if (rv_mix > 0.f) {
+                l += s->rv_out[0][i] * rv_mix * 3.f;
+                r += s->rv_out[1][i] * rv_mix * 3.f;
             }
             lr[2u * (done + i)] = fc_soft(l * s->level);
             lr[2u * (done + i) + 1u] = fc_soft(r * s->level);
