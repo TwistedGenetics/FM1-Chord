@@ -59,6 +59,13 @@ exported as a MIDI file; sets saved in the browser, as `.chordset` files and on 
 2. Open the [flasher](https://twistedgenetics.github.io/FM1-Chord/flasher/) in Chrome or Edge with the FM-1 on USB,
    pick the newest release, Install. Don't unplug until it says Done.
 
+## Ableton Live
+
+Each release has `FM1-Chord-M4L-X.Y.zip`: a **Max for Live MIDI effect** that plays every set the way the FM-1 does
+(same voicings, voice leading, strum, arpeggio at Live's tempo) into any instrument or VST. Unzip, keep
+`FM1-Chord.amxd` and `fm1chord.js` together, drag the `.amxd` onto a MIDI track before the instrument. It is made
+from the editor's code on every release (`tools/gen_m4l.mjs`); its README has a fallback if Live won't open it.
+
 ## Build
 
 Every push builds in GitHub Actions (`.github/workflows/build.yml`). Locally on Linux x86-64:
@@ -83,6 +90,7 @@ The editor runs from any static server: `python3 -m http.server -d web`, then `l
 | `web/editor/` | the editor; `presets.json` is the factory content for both editor and firmware |
 | `web/flasher/` | the web flasher |
 | `ios/` | the iPad app (the editor with CoreMIDI) |
+| `tools/gen_m4l.mjs` | the Max for Live device, made from the editor's code |
 | `tests/` | host tests: `run_host.sh` |
 | `docs/` | [RECOVERY](docs/RECOVERY.md), [MANUAL](docs/MANUAL.md), [PLATFORM](docs/PLATFORM.md), [PROTOCOL](docs/PROTOCOL.md), [FORMAT](docs/FORMAT.md), [UPSTREAM](docs/UPSTREAM.md) |
 

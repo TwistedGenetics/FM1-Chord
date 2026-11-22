@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9
+
+- **FM1-Chord for Ableton Live:** a Max for Live **MIDI effect** (no synth: put any instrument or VST after it).
+  Every key from Key 1 (F3) up plays that key's chord in the chosen set, with the FM-1's own voicings, voice
+  leading, strum and arpeggio (at Live's tempo); other notes and controllers pass through. All 118 factory sets,
+  and a panel for set, mode, latch, voice leading, octave, transpose, strum, arpeggio and humanise, all automatable.
+- It is made from the editor's own code by tools/gen_m4l.mjs on every release (FM1-Chord-M4L-X.Y.zip), so it
+  never falls behind; tests/host/m4l_test runs it with Max faked and checks every set against the editor's player.
+
 ## 0.8
 
 - **Harmony help on the FM-1:** on the CHORD pages, every chord you try on a key is rated against the chord on the
