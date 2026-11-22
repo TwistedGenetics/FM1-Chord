@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16
+
+- **Ableton device: the panel's buttons work.** < > , EDITOR and ALL OFF went through a filter waiting for a 1, but
+  Live's buttons send a bang: they did nothing. Now they go straight to the device.
+- The strip says "No answer from the device" if choosing a set gets no reply, and the device writes every message
+  from the strip in the Max window (the strip is ready, the strip chose ..., step ...), to find what's left.
+
 ## 0.15
 
 - **Ableton device: changing sets.** The strip's drop-down was a native menu, which a web view inside Live can't

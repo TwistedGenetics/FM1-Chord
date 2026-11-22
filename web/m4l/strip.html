@@ -64,7 +64,13 @@ const say = (...a) => { try { window.max.outlet(...a); } catch (e) { console.log
 const NOTE = ["F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E"];
 const isBlack = (k) => [1, 3, 5, 8, 10].includes(k % 12);
 let state = { name: "", kind: "factory", i: 0, chords: [], mode: "" }, lit = new Set(), lastKey = -1;
-let list = { factory: [], mine: [] };
+let list = { factory: [], mine: [] }, waiting = null;
+function ask(...a) {                                 // a request the device answers with "show": say if it doesn't
+  say(...a);
+  clearTimeout(waiting);
+  $("#info").textContent = "Asking the device…";
+  waiting = setTimeout(() => { $("#info").textContent = "No answer from the device: see the Max window"; }, 1500);
+}
 
 function keys() {
   const el = $("#keys");
@@ -109,7 +115,7 @@ function options() {                               // the set button, and the li
       b.textContent = n;
       b.dataset.v = kind + ":" + i;
       if (kind === state.kind && i === state.i) b.className = "cur";
-      b.onclick = () => { $("#picker").classList.remove("open"); say("choose", kind, i); };
+      b.onclick = () => { $("#picker").classList.remove("open"); ask("choose", kind, i); };
       pl.append(b);
     });
   };
@@ -118,7 +124,7 @@ function options() {                               // the set button, and the li
 }
 window.__fcIn = (name, data) => {
   if (name === "list") { list = data; options(); }
-  else if (name === "show") { state = data; lastKey = -1; options(); keys(); chordLine(); }
+  else if (name === "show") { clearTimeout(waiting); state = data; lastKey = -1; options(); keys(); chordLine(); }
   else if (name === "lit") {
     const [k, on] = data;
     if (on) { lit.add(k); lastKey = k; } else lit.delete(k);
@@ -131,8 +137,8 @@ $("#setbtn").onclick = () => {
   if (c) c.scrollIntoView({ block: "center" });
 };
 $("#pclose").onclick = () => $("#picker").classList.remove("open");
-$("#prev").onclick = () => say("step", -1);
-$("#next").onclick = () => say("step", 1);
+$("#prev").onclick = () => ask("step", -1);
+$("#next").onclick = () => ask("step", 1);
 $("#ed").onclick = () => say("openeditor");
 keys(); chordLine();
 say("stripready");

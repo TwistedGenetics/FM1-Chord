@@ -78,7 +78,7 @@ function number() {                      // the SET number on the panel, without
   const at = flat().findIndex(([k, i]) => k === where.kind && i === where.i);
   if (at >= 0) outlet(3, ["set", at + 1]);
 }
-function list() {
+function sendList() {
   toStrip("list", { factory: LIB.sets.map((s) => s.name), mine: MINE.map((s, i) => s.name || "SET " + (i + 1)) });
 }
 function restore() { toEditor("restore", { cur: setToFile(cur), kind: where.kind, i: where.i, dirty, mine: mineText }); }
@@ -139,10 +139,10 @@ function panic() {
   player.stop(); held.clear(); raw = [];
   for (let n = 0; n < 128; n++) outlet(0, [n, 0]);
 }
-function loadbang() { show(); list(); }
+function loadbang() { show(); sendList(); }
 
 // ---- the editor
-function hello() { editorOk = true; pagesOk = stripOk; list(); show(); restore(); }
+function hello() { post("FM1-Chord: the editor is ready\n"); editorOk = true; pagesOk = stripOk; sendList(); show(); restore(); }
 function set(text) {
   try { useSet(setFromFile(String(text))); } catch (e) { post("fm1chord: set: " + e.message + "\n"); return; }
   show();
@@ -165,15 +165,19 @@ function mine(text) {
   text = String(text);
   if (text === "none") { MINE = []; mineText = "none"; }
   else try { MINE = bankFromFile(text); mineText = text; } catch (e) { post("fm1chord: mine: " + e.message + "\n"); return; }
-  list();
+  sendList();
   number();
   saved();
 }
 
 // ---- the strip
-function stripready() { stripOk = true; pagesOk = editorOk; list(); show(); }
-function choose(kind, i) { load(String(kind) === "mine" ? "mine" : "factory", i, true); }
+function stripready() { post("FM1-Chord: the strip is ready\n"); stripOk = true; pagesOk = editorOk; sendList(); show(); }
+function choose(kind, i) {
+  post("FM1-Chord: the strip chose " + kind + " " + i + "\n");
+  load(String(kind) === "mine" ? "mine" : "factory", i, true);
+}
 function step(d) {
+  post("FM1-Chord: step " + d + "\n");
   const all = flat();
   let at = all.findIndex(([k, i]) => k === where.kind && i === where.i);
   at = ((at < 0 ? 0 : at + (d < 0 ? -1 : 1)) + all.length) % all.length;
@@ -194,7 +198,7 @@ function setvalueof(v) {
       if (o.cur) { useSet(setFromFile(o.cur)); where = { kind: o.kind === "mine" ? "mine" : "factory", i: o.i | 0 }; dirty = o.dirty ? 1 : 0; }
     }
   } catch (e) { post("fm1chord: the Live set's sets didn't load: " + e.message + "\n"); return; }
-  list(); show(); number(); restore();
+  sendList(); show(); number(); restore();
 }
 
 function anything() {
@@ -205,8 +209,11 @@ function anything() {
 }
 `;
 
-// Max calls the function a message names: the glue's names must be its own
+// Max calls the function a message names: the glue's names must be its own, and none of Max's special ones by mistake
 {
+  const special = ["list", "bang", "msg_int", "msg_float", "save", "notifydeleted"];
+  for (const [, n] of glue.matchAll(/^function (\w+)/gm))
+    if (special.includes(n)) throw new Error(`the device's "${n}" is one of Max's special function names`);
   const lib = plain(ed("chord.js"), "") + plain(ed("setcodec.js"), "") + plain(ed("harmony.js"), "") + player;
   for (const [, n] of glue.matchAll(/^function (\w+)/gm))
     if (new RegExp(`^(?:async\\s+)?(?:function|const|let|var|class)\\s+${n}\\b`, "m").test(lib))
@@ -356,9 +363,8 @@ const arrow = (text, x, d, name) => {
   const b = P.box({ maxclass: "live.text", varname: name, text, numinlets: 1, numoutlets: 2, outlettype: ["", ""],
     patching_rect: [x + 200, 40, 24, 20], presentation: 1, presentation_rect: [x, 22, 22, 24], mode: 0,
     ...param(name === "setdn" ? "Previous set" : "Next set", name === "setdn" ? "Prev" : "Next", 2, ["off", "on"], 0) });
-  const sl = P.obj("sel 1", x + 200, 70, 2, ["bang", ""]);
-  const m = P.msg("step " + d, x + 200, 100);
-  P.wire(b, 0, sl, 0); P.wire(sl, 0, m, 0); P.wire(m, 0, v8, 0);
+  const m = P.msg("step " + d, x + 200, 100);       // live.text in button mode sends a bang
+  P.wire(b, 0, m, 0); P.wire(m, 0, v8, 0);
 };
 arrow("<", 668, -1, "setdn");
 arrow(">", 768, 1, "setup");
@@ -371,14 +377,12 @@ P.wire(k1, 0, preB, 0); P.wire(preB, 0, v8, 0); P.wire(dev, 0, k1, 0);
 const edBtn = P.box({ maxclass: "live.text", varname: "editor", text: "EDITOR", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
   patching_rect: [700, 100, 60, 20], presentation: 1, presentation_rect: [668, 84, 122, 26], mode: 0,
   ...param("Open the editor", "Editor", 2, ["off", "on"], 0) });
-const sel2 = P.obj("sel 1", 700, 130, 2, ["bang", ""]);
-P.wire(edBtn, 0, sel2, 0); P.wire(sel2, 0, openMsg, 0);
+P.wire(edBtn, 0, openMsg, 0);
 const panicBtn = P.box({ maxclass: "live.text", varname: "panic", text: "ALL OFF", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
   patching_rect: [600, 100, 60, 20], presentation: 1, presentation_rect: [668, 116, 122, 22], mode: 0,
   ...param("All notes off", "Panic", 2, ["off", "on"], 0) });
-const sel1 = P.obj("sel 1", 600, 130, 2, ["bang", ""]);
 const panicMsg = P.msg("panic", 600, 160);
-P.wire(panicBtn, 0, sel1, 0); P.wire(sel1, 0, panicMsg, 0); P.wire(panicMsg, 0, v8, 0);
+P.wire(panicBtn, 0, panicMsg, 0); P.wire(panicMsg, 0, v8, 0);
 P.box({ maxclass: "live.comment", text: `v${version}`, numinlets: 1, numoutlets: 0, fontsize: 10,
   textcolor: [0.64, 0.66, 0.69, 1], patching_rect: [700, 10, 50, 18], presentation: 1, presentation_rect: [668, 146, 122, 18] });
 // the set playing and My sets, saved with the Live set: a stored-only blob parameter bound to the code
