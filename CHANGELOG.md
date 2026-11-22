@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19
+
+- **Ableton device: the strip's set list and arrows reach the device.** The panel's own controls worked but the
+  strip's messages didn't arrive. Now every outlet of the strip's web view goes to the device, the device looks
+  past any word put in front of a message (and reads Max's maxmessage: links), and the strip falls back to a
+  maxmessage: link where window.max is missing. Messages it doesn't know go to the Max window once each.
+
 ## 0.18
 
 - Ableton device: a status line on the strip, from the device once a second: whether it's running and the last

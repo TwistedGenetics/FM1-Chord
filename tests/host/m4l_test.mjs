@@ -165,6 +165,17 @@ check(/boom/.test(x.last(x.strip, "error") || "") && x.posts.some((p) => /FM1-Ch
 x.send("note", KEY0_NOTE, 100);
 check(x.midi.length > 0, "and the device goes on playing");
 
+// 5d. a message with a word in front (whatever the web view adds), or Max's maxmessage: link, still arrives
+const w = device(); w.send("loadbang");
+w.send("message", "choose", "factory", 4);
+check(w.get("where.i") === 4, "'message choose factory 4'");
+w.send("maxmessage", "choose/factory/7");
+check(w.get("where.i") === 7, "'maxmessage choose/factory/7'");
+w.send("maxmessage", "step", 1);
+check(w.get("where.i") === 8, "'maxmessage step 1'");
+w.send("url", "file:///x/FM1-Chord-strip.html"); w.send("url", "file:///y");
+check(w.posts.filter((p) => /doesn't know: url/.test(p)).length === 1, "other web view messages: written once, ignored");
+
 // 6. a page that doesn't say hello is loaded again by the device's folder; one that does isn't
 const q = device(); q.send("loadbang"); q.send("stripready");
 for (let i = 0; i < 310; i++) q.send("tick", 5);
