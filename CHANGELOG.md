@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14
+
+- **Ableton device: the strip and the editor show up.** 0.13 asked Max's web view to open its pages with `read`,
+  which wants a web address, so the device stayed a blank grey box. It now uses `readfile`; and if a page hasn't
+  answered after 1.5 s, the device loads it again from the folder the device is in, saying so in the Max window.
+
 ## 0.13
 
 - **The Ableton device is now the editor.** The device's strip (on the track) shows the set (pick any, or step

@@ -105,7 +105,22 @@ function note(pitch, vel) {
   player.keyEvent(cur, k, vel);
   lit(k, vel ? 1 : 0);
 }
-function tick(ms) { player.run(cur, Math.max(1, Math.round(ms)), false); }
+function tick(ms) {
+  player.run(cur, Math.max(1, Math.round(ms)), false);
+  if (!pagesOk && ++ticks === 300) pages();          // 1.5 s and a page hasn't said hello: load it by its full path
+}
+// the pages: the patch loads them by name (readfile, from Max's search path); if one doesn't answer, by the path of
+// the folder the device is in
+let ticks = 0, pagesOk = false, stripOk = false, editorOk = false;
+const PATCHER = (() => { try { return typeof patcher !== "undefined" ? patcher : this.patcher; } catch (e) { return null; } })();
+function pages() {
+  let f = "";
+  try { f = String((PATCHER && PATCHER.filepath) || ""); } catch (e) {}
+  const dir = f.slice(0, f.lastIndexOf("/") + 1);
+  if (!dir) { post("FM1-Chord: can't tell which folder the device is in; keep its four files together in one folder\n"); return; }
+  if (!stripOk) { post("FM1-Chord: loading " + dir + "FM1-Chord-strip.html\n"); outlet(1, ["readfile", dir + "FM1-Chord-strip.html"]); }
+  if (!editorOk) { post("FM1-Chord: loading " + dir + "FM1-Chord-editor.html\n"); outlet(2, ["readfile", dir + "FM1-Chord-editor.html"]); }
+}
 function tempo(b) { tempoNow = b; cur.tempo = Math.round(b); }
 function panic() {
   player.stop(); held.clear(); raw = [];
@@ -114,7 +129,7 @@ function panic() {
 function loadbang() { show(); list(); }
 
 // ---- the editor
-function hello() { list(); show(); restore(); }
+function hello() { editorOk = true; pagesOk = stripOk; list(); show(); restore(); }
 function set(text) {
   try { useSet(setFromFile(String(text))); } catch (e) { post("fm1chord: set: " + e.message + "\n"); return; }
   show();
@@ -142,7 +157,7 @@ function mine(text) {
 }
 
 // ---- the strip
-function stripready() { list(); show(); }
+function stripready() { stripOk = true; pagesOk = editorOk; list(); show(); }
 function choose(kind, i) { load(String(kind) === "mine" ? "mine" : "factory", i, true); }
 function step(d) {
   const all = MINE.map((_, i) => ["mine", i]).concat(LIB.sets.map((_, i) => ["factory", i]));
@@ -271,8 +286,8 @@ const E = patchMaker();
   E.obj("inlet", 20, 20, 0, [""], { comment: "pcontrol", patching_rect: [20, 20, 30, 30] });
   const inMsg = E.obj("inlet", 80, 20, 0, [""], { comment: "to the editor", patching_rect: [80, 20, 30, 30] });
   const lb = E.obj("loadbang", 140, 20, 1, ["bang"]);
-  const rd = E.msg("read FM1-Chord-editor.html", 140, 50);
-  const web = E.box({ maxclass: "jweb", numinlets: 1, numoutlets: 2, outlettype: ["", ""], rendermode: 1,
+  const rd = E.msg("readfile FM1-Chord-editor.html", 140, 50);
+  const web = E.box({ maxclass: "jweb", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
     patching_rect: [80, 90, 400, 300], presentation: 1, presentation_rect: [0, 0, 1180, 820] });
   const o = E.obj("outlet", 80, 420, 1, [], { comment: "from the editor", patching_rect: [80, 420, 30, 30] });
   E.wire(lb, 0, rd, 0); E.wire(rd, 0, web, 0); E.wire(inMsg, 0, web, 0); E.wire(web, 0, o, 0);
@@ -301,9 +316,9 @@ P.wire(dev, 0, pathMsg, 0); P.wire(pathMsg, 0, lpath, 0); P.wire(lpath, 0, lobs,
 const lbm = P.msg("loadbang", 520, 130);
 P.wire(dev, 0, lbm, 0); P.wire(lbm, 0, v8, 0);
 // the strip, in the device
-const strip = P.box({ maxclass: "jweb", varname: "strip", numinlets: 1, numoutlets: 2, outlettype: ["", ""], rendermode: 1,
+const strip = P.box({ maxclass: "jweb", varname: "strip", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
   patching_rect: [200, 470, 330, 85], presentation: 1, presentation_rect: [0, 0, 660, 169] });
-const rdS = P.msg("read FM1-Chord-strip.html", 200, 440);
+const rdS = P.msg("readfile FM1-Chord-strip.html", 200, 440);
 P.wire(dev, 0, rdS, 0); P.wire(rdS, 0, strip, 0);
 P.wire(v8, 1, strip, 0);
 const rOpen = P.obj("route openeditor", 200, 570, 1, ["", ""]);

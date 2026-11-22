@@ -19,9 +19,10 @@ const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } }
 
 function device() {
   const midi = [], strip = [], editor = [], posts = [];
-  const ctx = { console, notified: 0, messagename: "", post: (s) => posts.push(s), arrayfromargs: (a) => Array.from(a) };
+  const ctx = { console, notified: 0, patcher: { filepath: "Macintosh HD:/Users/jamie/Music/FM1-Chord/FM1-Chord.amxd" }, messagename: "", post: (s) => posts.push(s), arrayfromargs: (a) => Array.from(a) };
   ctx.outlet = (o, a) => {
     if (o === 0) { midi.push(a.slice()); return; }
+    if (a[0] === "readfile") { (o === 1 ? strip : editor).push(["readfile", a[1]]); return; }
     const m = /^window\.__fcIn && window\.__fcIn\(("[^"]*"),([\s\S]*)\)$/.exec(a[1]);
     if (a[0] !== "executejavascript" || !m) throw new Error("not a call into a page: " + a.join(" "));
     (o === 1 ? strip : editor).push([JSON.parse(m[1]), JSON.parse(m[2])]);
@@ -122,7 +123,16 @@ check(g.get("MINE.length") === 1, "a 0.10-0.12 device's My sets come in");
 const h = device(); h.send("loadbang"); h.send("setvalueof", "garbage"); h.send("setvalueof", "none");
 check(h.get("cur.name") === lib.sets[0].name && h.posts.length === 1, "junk in the Live set: reported, nothing changes");
 
-// 5. every note started, stopped
+// 5. a page that doesn't say hello is loaded again by the device's folder; one that does isn't
+const q = device(); q.send("loadbang"); q.send("stripready");
+for (let i = 0; i < 310; i++) q.send("tick", 5);
+check(q.last(q.editor, "readfile") === "Macintosh HD:/Users/jamie/Music/FM1-Chord/FM1-Chord-editor.html" && !q.last(q.strip, "readfile"),
+  "the editor's page reloaded by its full path, the strip's left alone");
+const q2 = device(); q2.send("loadbang"); q2.send("stripready"); q2.send("hello");
+for (let i = 0; i < 310; i++) q2.send("tick", 5);
+check(!q2.last(q2.editor, "readfile") && !q2.last(q2.strip, "readfile"), "both pages answered: nothing reloaded");
+
+// 6. every note started, stopped
 const on = new Map();
 for (const dev of [t, e]) for (const [n, v] of dev.midi) on.set(n, (on.get(n) || 0) + (v ? 1 : -1));
 check([...on.values()].every((c) => c <= 0), "a note left hanging");
