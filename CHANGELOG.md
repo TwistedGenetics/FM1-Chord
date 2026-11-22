@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.18
+
+- Ableton device: a status line on the strip, from the device once a second: whether it's running and the last
+  message it got. To find where choosing a set on the strip goes missing.
+
 ## 0.17
 
 - **Ableton device: octave up and down.** OCT − and OCT + on the panel (with the octave, −3 to +3, automatable)

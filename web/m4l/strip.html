@@ -37,6 +37,9 @@
   #chord { font-size: 46px; font-weight: 700; color: var(--acc); white-space: nowrap; overflow: hidden;
            text-overflow: ellipsis; max-width: 400px; line-height: 60px; }
   #info { color: var(--soft); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #beat { position: absolute; right: 10px; top: 46px; font-size: 13px; color: var(--soft); }
+  #beat.ok::before { content: "● "; color: #4cd964; }
+  #beat.bad { color: #ff6b6b; }
   .keys { display: grid; grid-template-columns: repeat(27, 1fr); gap: 2px; height: 58px; padding: 2px 8px 8px; }
   .k { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; display: flex;
        align-items: flex-end; justify-content: center; padding-bottom: 4px; font-size: 11px; color: var(--soft);
@@ -57,6 +60,7 @@
   <button id="ed">EDITOR</button>
 </div>
 <div class="mid"><div id="chord">FM1-Chord</div><div id="info">Loading…</div></div>
+<div id="beat" class="bad">device: not heard yet</div>
 <div class="keys" id="keys"></div>
 <div id="picker" role="dialog" aria-label="Choose a set">
   <div class="bar"><b>CHOOSE A SET</b><button id="pclose">CLOSE</button></div>
@@ -127,7 +131,18 @@ function options() {                               // the set button, and the li
   grp("MY SETS", list.mine, "mine");
   grp("FACTORY", list.factory, "factory");
 }
+let beatAt = 0;
+setInterval(() => {                                   // the device's heartbeat stopped?
+  if (beatAt && Date.now() - beatAt > 3000) { $("#beat").className = "bad"; $("#beat").textContent = "device: silent"; }
+}, 1000);
 window.__fcIn = (name, data) => {
+  if (name === "beat") {
+    beatAt = Date.now();
+    const b = $("#beat");
+    b.className = "ok";
+    b.textContent = "device " + data.n + " · last: " + data.last;
+    return;
+  }
   if (name === "error") { clearTimeout(waiting); const i = $("#info"); i.textContent = data; i.className = "err"; return; }
   if (name === "list") { list = data; options(); }
   else if (name === "show") {

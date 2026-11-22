@@ -129,10 +129,14 @@ function note(pitch, vel) {
 function tick(ms) {
   player.run(live, Math.max(1, Math.round(ms)), false);
   if (ticks < 1000 && ++ticks === 300 && !pagesOk) pages();   // 1.5 s and a page hasn't said hello: by its full path
+  if (++beatT >= 200) {                                       // once a second: the strip's status line
+    beatT = 0;
+    toStrip("beat", { n: ++beats, last: lastMsg });
+  }
 }
 // the pages: the patch loads them by name (readfile, from Max's search path); if one doesn't answer, by the path of
 // the folder the device is in
-let ticks = 0, pagesOk = false, stripOk = false, editorOk = false;
+let beatT = 0, ticks = 0, pagesOk = false, stripOk = false, editorOk = false;
 const PATCHER = (() => { try { return typeof patcher !== "undefined" ? patcher : this.patcher; } catch (e) { return null; } })();
 function pages() {
   let f = "";
@@ -217,8 +221,10 @@ function setvalueof(v) {
 }
 
 // every message from Max goes through guard(): an error is written to the Max window and shown on the strip
+let lastMsg = "none yet", beats = 0;
 function guard(name, f) {
   return function () {
+    if (name !== "tick" && name !== "load") lastMsg = name + " " + Array.prototype.slice.call(arguments).join(" ").slice(0, 40);
     try { return f.apply(this, arguments); }
     catch (e) {
       const m = "FM1-Chord: " + name + ": " + (e && e.message ? e.message : e);
