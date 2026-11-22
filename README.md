@@ -21,8 +21,9 @@ editor (also an iPad app) that suggests what to play next.
 OCT− / OCT+ move the whole set; per key: root, 30 chord types (maj, m, 7, maj7, m7, 9, m9, 11, 13, sus2, sus4, dim,
 aug, add9, 6, m6, 5, m11, m7b5, dim7, maj9, 7sus4, 7#9, 7b9, 7#5, m(maj7), maj7#11, 7#11, m13, 6/9) or exact notes, inversion, voicing (close, open, drop 2, drop 3,
 spread), slash bass and octave; LEARN captures a chord from notes you play; strum, an arpeggiator (internal tempo or
-MIDI clock), latch, auto voice leading, velocity humanise, transpose. The screen is light with big type: the chord's
-name, its inversion and voicing, the octave.
+MIDI clock), latch, auto voice leading, velocity humanise, transpose. The screen has big type on a dark module-panel look
+(0.8): the chord's name, its inversion and voicing, the octave; while you choose a chord, a green / amber / red band
+says how it follows the chord on the key before.
 
 **The synth:** ten voices, two oscillators (saw, square, triangle, sine, organ, pulse, supersaw, noise, four
 wavetables) with detune, tuning, hard sync or ring mod, a sub and FM,

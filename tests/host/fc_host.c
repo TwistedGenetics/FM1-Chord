@@ -312,7 +312,10 @@ int main(int argc, char **argv)
                 got = (long)fc_sel;
             else if (!strcmp(b, "version"))
                 got = fc_set.version;
-            else if (!strcmp(b, "fmode"))
+            else if (!strcmp(b, "tier")) {         /* the edit pages' rating of the key against the one before */
+                const fc_chord_t *pv = fc_prev_chord(fc_sel % FC_NKEYS);
+                got = pv ? (long)fc_rate_tier(&fc_set.ch[fc_sel % FC_NKEYS], pv, fc_set.key_root, fc_set.key_scale, 1) : -1;
+            } else if (!strcmp(b, "fmode"))
                 got = fc_set.sx.flt_mode;
             else if (!strcmp(b, "macro1"))
                 got = fc_set.sx.macro[0];

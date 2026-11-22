@@ -12,11 +12,13 @@ final class EditorViewController: UIViewController, WKNavigationDelegate, WKUIDe
     private let files = FilesBridge()
     private let toastLabel = PaddedLabel()
     private var toastTimer: Timer?
-    private let pageBackground = UIColor(red: 0xF4 / 255, green: 0xF3 / 255, blue: 0xEE / 255, alpha: 1)
+    private let pageBackground = UIColor(red: 0x1B / 255, green: 0x1D / 255, blue: 0x20 / 255, alpha: 1)   // the editor's dark ground (0.8)
     private let selfTest = ProcessInfo.processInfo.arguments.contains("-selftest")
 
     override var prefersStatusBarHidden: Bool { true }
     override var prefersHomeIndicatorAutoHidden: Bool { true }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }   // light text on the dark editor
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -58,9 +60,9 @@ final class EditorViewController: UIViewController, WKNavigationDelegate, WKUIDe
 
         // a line of news (saved files): big, dark text on white, as the rest of the page
         toastLabel.font = .systemFont(ofSize: 20, weight: .semibold)
-        toastLabel.textColor = UIColor(red: 0x10 / 255, green: 0x11 / 255, blue: 0x14 / 255, alpha: 1)
-        toastLabel.backgroundColor = .white
-        toastLabel.layer.borderColor = UIColor(red: 0xFF / 255, green: 0x6A / 255, blue: 0x2B / 255, alpha: 1).cgColor
+        toastLabel.textColor = UIColor(red: 0xEC / 255, green: 0xEE / 255, blue: 0xF0 / 255, alpha: 1)
+        toastLabel.backgroundColor = UIColor(red: 0x26 / 255, green: 0x2A / 255, blue: 0x2E / 255, alpha: 1)
+        toastLabel.layer.borderColor = UIColor(red: 0x3C / 255, green: 0xC8 / 255, blue: 0xDC / 255, alpha: 1).cgColor
         toastLabel.layer.borderWidth = 3
         toastLabel.layer.cornerRadius = 10
         toastLabel.layer.masksToBounds = true

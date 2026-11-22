@@ -40,6 +40,20 @@ expect inv 2
 tap EDIT
 expect page 2
 shot edit2.ppm
+# 0.8: on a chord page, each chord tried is rated against the key before (green / amber / red)
+key 1 down
+key 1 up
+tap EDIT
+expect page 1
+expect tier 0
+shot rate_strong.ppm
+turn K1 1
+expect tier >0
+shot rate_other.ppm
+turn K1 -1
+key 0 down
+key 0 up
+expect tier -1
 # select key 4 with SELECT, learn F A C (an F major) on it
 turn SELECT 3
 expect sel 3

@@ -15,7 +15,7 @@ python3 tools/gen_fc_font.py build/gen/fc_font.h >/dev/null
 [ -f build/gen/x0x/felucca_font.h ] || python3 x0x-firmware/tools/gen_font.py build/gen/x0x/felucca_font.h >/dev/null
 # the firmware's own rules: C99, no doubles anywhere (-Wdouble-promotion), every warning an error
 W="-O2 -std=c99 -Wall -Wextra -Werror -Wdouble-promotion -Wno-unused-function -Isrc/core -Isrc/dsp -Isrc/app -Ibuild/gen -Ibuild/gen/x0x"
-CORE="src/core/fc_chord.c src/core/fc_set.c src/core/fc_play.c"
+CORE="src/core/fc_chord.c src/core/fc_set.c src/core/fc_play.c src/core/fc_harmony.c"
 # shellcheck disable=SC2086
 $CC $W tests/host/chord_test.c $CORE -o build/host/chord_test
 build/host/chord_test
@@ -26,6 +26,9 @@ build/host/synth_test build/host
 # shellcheck disable=SC2086
 $CC $W tests/host/synth_dump.c src/dsp/fc_synth.c $CORE -lm -o build/host/synth_dump
 build/host/synth_dump | node tests/host/synth_xcheck.mjs
+# shellcheck disable=SC2086
+$CC $W tests/host/harmony_dump.c $CORE -o build/host/harmony_dump
+build/host/harmony_dump | node tests/host/harmony_xcheck.mjs
 python3 tools/gen_presets.py --bin build/host/presets
 node tests/host/presets_xcheck.mjs build/host/presets
 # shellcheck disable=SC2086

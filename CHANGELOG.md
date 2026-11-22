@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8
+
+- **Harmony help on the FM-1:** on the CHORD pages, every chord you try on a key is rated against the chord on the
+  key before it, in a coloured band under its name: green STRONG, amber OK, red FAR (with that chord's name). The
+  rating is the editor's own (tests/host/harmony_xcheck: 119,826 ratings agree).
+- **The same in the editor:** the chord page shows the rating, and colours every root and chord type by how it
+  would follow the key before; each key on the keyboard has a coloured foot for how it follows its neighbour.
+- **A dark, module-panel look** (as the mockup's module grid), on the FM-1's screen and in the editor: near-black
+  panels, light text, one cyan accent, sections as panels with a light, and **knobs** in place of sliders (drag up
+  and down; the keys and screen readers still work them).
+
 ## 0.7
 
 - **Stage two of the synth.** New waves for either oscillator: **supersaw** (seven saws, spread adjustable),

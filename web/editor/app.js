@@ -9,7 +9,7 @@ import {
   loadPresets, newSet, cloneSet, encodeSet, setToFile, setFromFile, WAVES, MODES, RATES, STRUM_DIRS, ARP_DIRS,
   ensureSx, DIVS, DIV_BEATS, DLY_MAX,
 } from "./setcodec.js";
-import { suggest, suggestNext, fillSet, expandSet, detectKey, roman, keyLabel, SCALE_LABELS, TIERS } from "./harmony.js";
+import { suggest, suggestNext, fillSet, expandSet, detectKey, roman, keyLabel, rate, SCALE_LABELS, TIERS } from "./harmony.js";
 import { readChordText } from "./chordtext.js";
 import { PHRASES, render as renderProg, toMidiFile } from "./progression.js";
 import { Preview } from "./audio.js";
@@ -116,6 +116,8 @@ function renderKeys() {
     const sz = st.view === "grid" ? "" : nm.length > 7 ? " l" : nm.length > 5 ? " m" : "";
     el.innerHTML = `<span class="cn${sz}">${esc(nm).replace("/", "/<wbr>")}</span><span class="kn">${keyName(k)}</span>`;
     if (sugs && !isEmpty(c) && sugs.has(chordName(c))) el.classList.add("sug-" + sugs.get(chordName(c)));
+    const pv = isEmpty(c) ? null : prevChord(k);   // how it follows the key before: a coloured foot
+    if (pv) el.classList.add("fit-" + TIERS[fitTier(c, pv)].id);
     if (st.view !== "grid" && isBlack(k)) {
       const wi = whites.filter((w) => w < k).length;   // between white wi-1 and wi
       el.style.left = `calc(${(wi / whites.length) * 100}% - ${(0.76 / whites.length) * 50}%)`;
@@ -191,8 +193,43 @@ function octLabel() { const o = st.set.play.octave; $("#oct-val").textContent = 
 const seg = (items, cur, attr, cls = "") =>
   `<div class="seg ${cls}">${items.map((t, i) => `<button data-${attr}="${i}" class="${i === cur ? "on" : ""}" aria-pressed="${i === cur}">${esc(t)}</button>`).join("")}</div>`;
 const FMT = {};
+// a knob (0.8): the dial is drawn over a range input, which keeps the keyboard and screen readers working
+function knobArc(a0, a1) {
+  const p = (a) => { const t = ((a - 90) * Math.PI) / 180; return [32 + 25 * Math.cos(t), 32 + 25 * Math.sin(t)]; };
+  const s = p(a0), e = p(a1);
+  return `M${s[0].toFixed(1)} ${s[1].toFixed(1)} A25 25 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${e[0].toFixed(1)} ${e[1].toFixed(1)}`;
+}
+function knobSvg(v, lo, hi) {
+  const a = -135 + (270 * (v - lo)) / Math.max(1, hi - lo), t = ((a - 90) * Math.PI) / 180;
+  const z = lo < 0 && hi > 0 ? -135 + (270 * (0 - lo)) / (hi - lo) : -135;   // a ± knob draws from its middle
+  const [a0, a1] = a < z ? [a, z] : [z, Math.max(a, z + 1)];
+  return `<path class="kt" d="${knobArc(-135, 135)}"></path><path class="kv" d="${knobArc(a0, a1)}"></path>` +
+    `<circle class="kc" cx="32" cy="32" r="16"></circle><line class="kp" x1="32" y1="32" x2="${(32 + 12 * Math.cos(t)).toFixed(1)}" y2="${(32 + 12 * Math.sin(t)).toFixed(1)}"></line>`;
+}
 const slider = (id, label, v, lo = 0, hi = 127, fmt = (x) => x) => (FMT[id] = fmt,
-  `<div class="ctl"><label for="${id}">${esc(label)}</label><input type="range" id="${id}" min="${lo}" max="${hi}" value="${v}"><output for="${id}">${esc(fmt(v))}</output></div>`);
+  `<div class="ctl knob"><svg viewBox="0 0 64 56" aria-hidden="true">${knobSvg(v, lo, hi)}</svg><input type="range" id="${id}" min="${lo}" max="${hi}" value="${v}" aria-label="${esc(label)}"><output for="${id}">${esc(fmt(v))}</output><label for="${id}">${esc(label)}</label></div>`);
+// keep the dials in step with their inputs; drag a dial up or down (a slow drag is fine-grained)
+document.addEventListener("input", (e) => {
+  const r = e.target;
+  if (r.matches && r.matches(".knob input[type=range]")) r.previousElementSibling.innerHTML = knobSvg(+r.value, +r.min, +r.max);
+}, true);
+document.addEventListener("pointerdown", (e) => {
+  const r = e.target;
+  if (!r.matches || !r.matches(".knob input[type=range]")) return;
+  e.preventDefault();
+  r.focus();
+  const y0 = e.clientY, v0 = +r.value, lo = +r.min, hi = +r.max, id = e.pointerId;
+  r.setPointerCapture(id);
+  const move = (m) => {
+    const v = Math.round(Math.max(lo, Math.min(hi, v0 + ((y0 - m.clientY) * (hi - lo)) / 180)));
+    if (v !== +r.value) { r.value = v; r.dispatchEvent(new Event("input", { bubbles: true })); }
+  };
+  const up = () => {
+    r.removeEventListener("pointermove", move); r.removeEventListener("pointerup", up); r.removeEventListener("pointercancel", up);
+    r.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  r.addEventListener("pointermove", move); r.addEventListener("pointerup", up); r.addEventListener("pointercancel", up);
+});
 
 function renderPanel() {
   const p = $("#panel");
@@ -202,9 +239,17 @@ function renderPanel() {
 
 // ---- chord ----
 const IV_NAMES = ["R", "b2", "2", "b3", "3", "4", "b5", "5", "b6", "6", "b7", "7", "8", "b9", "9", "#9", "10", "11", "#11", "12", "b13", "13", "b7'", "7'"];
+// the chord on the nearest key below k with one (the chord this key follows), or null
+function prevChord(k) { for (let m = k - 1; m >= 0; m--) if (!isEmpty(st.set.chords[m])) return st.set.chords[m]; return null; }
+function fitTier(c, pv) { const { root, scale } = keyNow(); return rate(c, pv, root, scale, st.bias).tier; }
 function panelChord(p) {
   const k = st.sel, c = st.set.chords[k];
   const empty = isEmpty(c);
+  const pv = prevChord(k);
+  const fit = !empty && pv ? fitTier(c, pv) : -1;
+  const badge = pv ? (fit >= 0 ? `<span class="fitbadge ${TIERS[fit].id}">${TIERS[fit].label.toUpperCase()} after ${esc(chordName(pv))}</span>` :
+    `<span class="fitbadge none">Choose a chord: the roots and types are coloured by how they follow ${esc(chordName(pv))}</span>`) :
+    `<span class="fitbadge none">First chord: the next key is rated against this one</span>`;
   const notes = empty ? [] : chordNotes(c, st.set.play.transpose + 12 * st.set.play.octave);
   const qi = empty ? -1 : c.quality === Q_CUSTOM ? QUALITIES.length : c.quality;
   const mask = empty ? 0 : c.quality === Q_CUSTOM ? (c.custom[0] | (c.custom[1] << 8) | (c.custom[2] << 16)) :
@@ -213,7 +258,8 @@ function panelChord(p) {
     <div class="chordhead">
       <div><div class="hint">Key ${k + 1} · ${keyName(k)}</div>
         <div class="big">${empty ? "Empty key" : esc(chordName(c))}${empty ? "" : ` <span class="notes">${roman(c, st.set.keyRoot)}</span>`}</div>
-        <div class="notes">${empty ? "Pick a root and a chord type to put a chord here." : notes.map(midiName).join("  ")}</div></div>
+        <div class="notes">${empty ? "Pick a root and a chord type to put a chord here." : notes.map(midiName).join("  ")}</div>
+        <div style="margin-top: 8px">${badge}</div></div>
       <div class="row">
         <button id="c-play" ${empty ? "disabled" : ""}>▶ Hear it</button>
         <button id="c-learn" class="${st.learn ? "on" : ""}">${st.learn ? "Stop learning" : "Learn (play notes)"}</button>
@@ -234,6 +280,15 @@ function panelChord(p) {
       <div><h3>Bass note (slash chord)</h3>${seg(["none", ...NOTE_NAMES], empty ? -1 : c.bass === NOBASS ? 0 : c.bass + 1, "bass")}</div>
       <div><h3>This chord's octave</h3>${seg(["−2", "−1", "0", "+1", "+2"], empty ? -1 : c.octave + 2, "oct")}</div>
     </div>`;
+  if (pv) {                                        // every root and type you could try, coloured by how it follows
+    const base = empty ? { root: st.set.keyRoot, quality: pv.quality === Q_CUSTOM ? 0 : pv.quality, custom: [0, 0, 0],
+      inversion: 0, voicing: 0, bass: NOBASS, octave: 0 } : { ...c, bass: NOBASS };
+    p.querySelectorAll("[data-root]").forEach((b) => b.classList.add("t-" + TIERS[fitTier({ ...base, root: +b.dataset.root }, pv)].id));
+    if (base.quality !== Q_CUSTOM)
+      p.querySelectorAll("[data-q]").forEach((b) => {
+        if (+b.dataset.q < QUALITIES.length) b.classList.add("t-" + TIERS[fitTier({ ...base, quality: +b.dataset.q }, pv)].id);
+      });
+  }
   const edit = (f) => {
     let ch = st.set.chords[k];
     if (isEmpty(ch)) ch = st.set.chords[k] = { root: st.set.keyRoot, quality: 0, custom: [0, 0, 0], inversion: 0, voicing: 0, bass: NOBASS, octave: 0 };

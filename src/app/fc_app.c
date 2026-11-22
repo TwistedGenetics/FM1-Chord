@@ -19,6 +19,7 @@
 #include "fc_presets.h"
 #include "fc_font.h"
 #include "fc_math.h"
+#include "fc_harmony.h"
 
 #ifndef FC_VERSION
 #define FC_VERSION "DEV"
@@ -815,12 +816,26 @@ void fc_app_input(void)
 
 /* ------------------------------------------------------------------------------------------------ screen --- */
 /* Light, as the editor: warm white, near-black text, big type (the chord's name 50 px). */
-#define FC_BG RGB(246, 244, 239)
-#define FC_HDR RGB(222, 216, 203)
-#define FC_INK RGB(18, 20, 23)
-#define FC_SOFT RGB(64, 68, 76)
-#define FC_HIT RGB(255, 222, 120)
-#define FC_LINE RGB(190, 184, 170)
+/* 0.8: dark, module-panel look (like the editor): near-black, light text, one cyan accent */
+#define FC_BG RGB(27, 29, 32)
+#define FC_HDR RGB(40, 44, 49)
+#define FC_INK RGB(236, 238, 240)
+#define FC_SOFT RGB(163, 169, 177)
+#define FC_HIT RGB(22, 64, 72)
+#define FC_LINE RGB(58, 63, 69)
+#define FC_ACC RGB(60, 200, 220)
+#define FC_DARK RGB(14, 16, 18)                  /* text on the coloured rating bands */
+static const uint16_t FC_TIER_COL[3] = {RGB(61, 220, 132), RGB(255, 176, 32), RGB(255, 90, 79)};
+static const char *const FC_TIER_S[3] = {"STRONG", "OK", "FAR"};
+
+/* the chord on the nearest key below k that has one, or 0 */
+static const fc_chord_t *fc_prev_chord(uint32_t k)
+{
+    while (k-- > 0u)
+        if (fc_set.ch[k].quality != FC_EMPTY)
+            return &fc_set.ch[k];
+    return 0;
+}
 
 static void fc_center(int32_t y, const felucca_font_t *f, const char *s, uint16_t c)
 {
@@ -851,7 +866,8 @@ void fc_app_draw(int force)
         name[i] = 0;
     }
     cv_text(6, 7, &FONT_B, name, FC_INK);
-    cv_text(234 - text_w(&FONT_B, FC_PG_NAME[fc_page]), 7, &FONT_B, FC_PG_NAME[fc_page], FC_SOFT);
+    cv_rect(0, 30, 240, 2, FC_ACC);
+    cv_text(234 - text_w(&FONT_B, FC_PG_NAME[fc_page]), 7, &FONT_B, FC_PG_NAME[fc_page], FC_ACC);
     if (fc_page == PG_LEARN) {
         fc_center(40, &FONT_M, "PLAY THE NOTES", FC_INK);
         if (fc_ln_n) {
@@ -945,7 +961,28 @@ void fc_app_draw(int force)
     }
     if (fc_page == PG_SAVE)                      /* the octave line is no use here: how to answer instead */
         fc_cpy(b, fc_sv_n > 1u ? "SAVE YES  K1 OTHER" : "PRESS SAVE");
-    fc_center(36, &FONT_M, b, fc_page == PG_SAVE ? FC_SOFT : FC_INK);
+    if ((fc_page == PG_EDIT || fc_page == PG_EDIT2) && c->quality != FC_EMPTY) {
+        /* how this chord follows the one on the key before: green STRONG, amber OK, red FAR (the editor's rating) */
+        const fc_chord_t *pv = fc_prev_chord(show);
+        if (pv) {
+            uint32_t t = fc_rate_tier(c, pv, fc_set.key_root, fc_set.key_scale, 1);
+            char pn[24];
+            fc_chord_name(pv, pn, sizeof pn);
+            fc_cpy(b, FC_TIER_S[t]);
+            k = 0;
+            while (b[k])
+                k++;
+            fc_cpy(b + k, "  AFTER ");
+            k += 8;
+            for (i = 0; pn[i] && k < 30u; i++)
+                b[k++] = pn[i];
+            b[k] = 0;
+            cv_rect(0, 33, 240, 29, FC_TIER_COL[t]);
+            fc_center(36, text_w(&FONT_M, b) <= 236 ? &FONT_M : &FONT_B, b, FC_DARK);
+        } else
+            fc_center(36, &FONT_M, "FIRST CHORD", FC_SOFT);
+    } else
+        fc_center(36, &FONT_M, b, fc_page == PG_SAVE ? FC_SOFT : FC_INK);
     cv_rect(0, 64, 240, 2, FC_LINE);
     for (i = 0; i < 4u; i++) {
         uint32_t p = FC_PAGE_P[fc_page][i];
@@ -956,7 +993,7 @@ void fc_app_draw(int force)
             cv_rect(x + 1, 68, 58, 50, FC_HIT);
         cv_text(x + (60 - text_w(&FONT_XS, fc_plabel(p))) / 2, 72, &FONT_XS, fc_plabel(p), FC_SOFT);
         fc_ptext(p, b);
-        cv_text(x + (60 - text_w(&FONT_B, b)) / 2, 92, &FONT_B, b, FC_INK);
+        cv_text(x + (60 - text_w(&FONT_B, b)) / 2, 92, &FONT_B, b, (int32_t)i == fc_knob_hit ? FC_ACC : FC_INK);
     }
     cv_blit(0, 120);
 }
