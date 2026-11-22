@@ -220,6 +220,21 @@ export function setToFile(s) {
   return JSON.stringify({ format: "fm1-chord-set", version: 1, set: s,
     bytes: Array.from(encodeSet(s)).map((x) => x.toString(16).padStart(2, "0")).join("") }, null, 1);
 }
+// several sets as one file (.fm1bank): for the Ableton device, which loads a bank as its "Mine" sets
+const hex = (b) => Array.from(b).map((x) => x.toString(16).padStart(2, "0")).join("");
+const unhex = (h) => Uint8Array.from((h.match(/../g) || []).map((x) => parseInt(x, 16)));
+export function bankToFile(sets) {
+  return JSON.stringify({ format: "fm1-chord-bank", version: 1, sets: sets.map((s) => ({ name: s.name, bytes: hex(encodeSet(s)) })) });
+}
+// a bank or a single .chordset; sets that don't decode are left out (an error if none do)
+export function bankFromFile(text) {
+  const j = JSON.parse(text);
+  if (j.format === "fm1-chord-set") return [setFromFile(text)];
+  if (j.format !== "fm1-chord-bank" || !Array.isArray(j.sets)) throw new Error("not an FM1-Chord bank or set file");
+  const sets = j.sets.map((e) => decodeSet(unhex(e.bytes || ""))).filter(Boolean);
+  if (!sets.length) throw new Error("no sets in that bank");
+  return sets;
+}
 export function setFromFile(text) {
   const j = JSON.parse(text);
   if (j.format !== "fm1-chord-set") throw new Error("not an FM1-Chord set file");

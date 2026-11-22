@@ -47,6 +47,8 @@ const LIB = loadPresets(PRESETS);
 const UI = { mode: 0, latch: 0, vl: 1, octave: 0, transpose: 0, strum: 15, strumdir: 0, arprate: 3, arpdir: 0,
   arpoct: 1, arpgate: 60, human: 0 };
 let base = KEY0_NOTE, setIdx = 0, tempoNow = 120, cur = null;
+let bank = 0, MINE = [], mineText = "";  // bank 0 factory, 1 mine: the sets from a .fm1bank (or .chordset) file
+const sets = () => (bank === 1 && MINE.length ? MINE : LIB.sets);
 const held = new Map();                  // incoming note -> key, so a note off finds its key whatever has changed
 const player = new Player({
   on: (n, v) => outlet(0, [n, v]),
@@ -61,7 +63,7 @@ function applyUI() {
   cur.tempo = Math.round(tempoNow);
 }
 function show(k) {
-  outlet(1, ["name", (setIdx + 1) + ". " + cur.name]);
+  outlet(1, ["name", (bank === 1 && MINE.length ? "Mine " : "") + (setIdx + 1) + ". " + cur.name]);
   if (k === undefined) return;
   const c = cur.chords[k];
   outlet(1, ["chord", isEmpty(c) ? "-" : chordName(c)]);
@@ -69,12 +71,14 @@ function show(k) {
 }
 function load(i) {
   player.stop();
-  setIdx = Math.max(0, Math.min(LIB.sets.length - 1, i));
-  cur = cloneSet(LIB.sets[setIdx]);
+  const all = sets();
+  setIdx = Math.max(0, Math.min(all.length - 1, i));
+  cur = cloneSet(all[setIdx]);
   applyUI();
   show();
   outlet(1, ["chord", "-"]);
-  outlet(1, ["info", LIB.sets.length + " sets · key 1 = " + midiName(base)]);
+  const what = bank === 1 ? (MINE.length ? MINE.length + " of my sets" : "no sets loaded: press LOAD") : LIB.sets.length + " factory sets";
+  outlet(1, ["info", what + " · key 1 = " + midiName(base)]);
 }
 function note(pitch, vel) {
   if (!cur) load(setIdx);
@@ -96,9 +100,43 @@ function panel(name, v) {
   UI[name] = Math.round(v);
   if (cur) applyUI();
 }
+// the Mine bank: read from a file (LOAD), kept in the Live set through pattr (getvalueof / setvalueof)
+function useBank(text) {
+  MINE = bankFromFile(text);
+  mineText = bankToFile(MINE);         // compact, and only sets that decoded
+}
+function read(path) {
+  let text = "";
+  try {
+    const f = new File(String(path), "read");
+    if (!f.isopen) throw new Error("can't open it");
+    while (f.position < f.eof) {
+      const part = f.readstring(Math.min(16384, f.eof - f.position));
+      if (!part.length) break;
+      text += part;
+    }
+    f.close();
+    useBank(text);
+  } catch (e) {
+    outlet(1, ["info", "LOAD: " + e.message]);
+    post("fm1chord: " + path + ": " + e.message + "\n");
+    return;
+  }
+  bank = 1;
+  outlet(1, ["bank", 1]);              // shows Mine on the panel's switch
+  if (typeof notifyclients === "function") notifyclients();
+  load(0);
+}
+function getvalueof() { return mineText || "none"; }
+function setvalueof(v) {
+  if (typeof v !== "string" || v === "none" || !v.length) return;
+  try { useBank(v); } catch (e) { post("fm1chord: the saved sets didn't load: " + e.message + "\n"); return; }
+  if (bank === 1) load(setIdx);
+}
 function anything() {
   const a = arrayfromargs(arguments);
   if (messagename === "base") { player.stop(); base = Math.round(a[0]); return; }
+  if (messagename === "bank") { const b = Math.round(a[0]) ? 1 : 0; if (b !== bank) { bank = b; load(0); } return; }
   if (messagename in UI) { panel(messagename, a[0]); return; }
   post("fm1chord: no message " + messagename + "\n");
 }
@@ -133,6 +171,7 @@ function param(longname, short, type, range, init, extra = {}) {
   const v = { parameter_longname: longname, parameter_shortname: short, parameter_type: type,
     parameter_initial_enable: 1, parameter_initial: [init] };
   if (type === 2) v.parameter_enum = range;
+  else if (type === 3) delete v.parameter_initial;
   else { v.parameter_mmin = range[0]; v.parameter_mmax = range[1]; v.parameter_unitstyle = 0; }
   return { parameter_enable: 1, saved_attribute_attributes: { valueof: { ...v, ...extra } } };
 }
@@ -140,7 +179,7 @@ function param(longname, short, type, range, init, extra = {}) {
 const midiin = obj("midiin", 20, 20, 1, ["int"]);
 const parse = obj("midiparse", 20, 60, 1, ["", "", "", "int", "int", "", "int", ""]);
 const pre = obj("prepend note", 20, 100, 1, [""]);
-const v8 = obj("v8 fm1chord.js", 20, 300, 1, ["", ""]);
+const v8 = obj("v8 fm1chord.js", 20, 300, 1, ["", ""], { varname: "fm1code" });
 const fmt = obj("midiformat", 20, 360, 7, ["int", ""]);
 const midiout = obj("midiout", 20, 400, 1, []);
 wire(midiin, 0, parse, 0); wire(parse, 0, pre, 0); wire(pre, 0, v8, 0); wire(v8, 0, fmt, 0); wire(fmt, 0, midiout, 0);
@@ -160,7 +199,7 @@ wire(dev, 0, pathMsg, 0); wire(pathMsg, 0, lpath, 0); wire(lpath, 0, lobs, 1); w
 const lb = box({ maxclass: "message", text: "loadbang", numinlets: 2, numoutlets: 1, outlettype: [""], patching_rect: [520, 130, 60, 22] });
 wire(dev, 0, lb, 0); wire(lb, 0, v8, 0);
 // what it shows
-const route = obj("route name chord info", 200, 340, 1, ["", "", "", ""]);
+const route = obj("route name chord info bank", 200, 340, 1, ["", "", "", "", ""]);
 wire(v8, 1, route, 0);
 const show = [
   ["name", [10, 4, 380, 22], 15, [0.85, 0.87, 0.9, 1]],
@@ -179,6 +218,7 @@ void help;
 // the panel: each control sends its message; at load the device bangs them so the code starts as they show
 const ctls = [
   ["live.numbox", "setnum", "Set", "Set", 1, [1, 118], 1, [10, 112, 60, 20]],
+  ["live.tab", "bank", "Bank", "Bank", 2, ["Factory", "Mine"], 0, [270, 112, 110, 20]],
   ["live.tab", "mode", "Mode", "Mode", 2, ["Chord", "Strum", "Arp"], 0, [330, 6, 180, 20]],
   ["live.text", "latch", "Latch", "Latch", 2, ["off", "on"], 0, [516, 6, 74, 20], { text: "LATCH", texton: "LATCH", mode: 1 }],
   ["live.text", "vl", "Voice lead", "VL", 2, ["off", "on"], 1, [516, 30, 74, 20], { text: "VOICE LEAD", texton: "VOICE LEAD", mode: 1 }],
@@ -202,6 +242,21 @@ ctls.forEach(([cls, msg, longname, short, type, range, init, rect, extra = {}], 
   const p = obj(`prepend ${msg}`, 600 + (i % 4) * 90, 70 + Math.floor(i / 4) * 70, 1, [""]);
   wire(c, 0, p, 0); wire(p, 0, v8, 0); wire(dev, 0, c, 0);
 });
+// LOAD: pick a .fm1bank from the editor's "For Ableton" (or a .chordset); the bank switch follows it
+const bankTab = boxes.find((b) => b.box.varname === "bank").box.id;
+const preBank = obj("prepend set", 200, 470, 1, [""]);
+wire(route, 3, preBank, 0); wire(preBank, 0, bankTab, 0);
+const loadBtn = box({ maxclass: "live.text", varname: "load", text: "LOAD SETS", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
+  patching_rect: [700, 360, 70, 20], presentation: 1, presentation_rect: [390, 112, 80, 20], mode: 0,
+  ...param("Load sets", "Load", 2, ["off", "on"], 0) });
+const sel1 = obj("sel 1", 700, 390, 2, ["bang", ""]);
+const dlg = obj("opendialog", 700, 420, 2, ["", "bang"]);
+const preRead = obj("prepend read", 700, 450, 1, [""]);
+wire(loadBtn, 0, sel1, 0); wire(sel1, 0, dlg, 0); wire(dlg, 0, preRead, 0); wire(preRead, 0, v8, 0);
+// the loaded sets saved with the Live set: a stored-only blob parameter bound to the code
+box({ maxclass: "newobj", text: "pattr fm1mine @bindto fm1code", numinlets: 1, numoutlets: 3, outlettype: ["", "", ""],
+  patching_rect: [700, 490, 190, 22], varname: "fm1mine",
+  ...param("My sets", "Mine", 3, [0, 0], 0, { parameter_invisible: 1, parameter_initial_enable: 0 }) });
 const panicBtn = box({ maxclass: "live.text", varname: "panic", text: "ALL OFF", numinlets: 1, numoutlets: 2, outlettype: ["", ""],
   patching_rect: [600, 360, 60, 20], presentation: 1, presentation_rect: [516, 54, 74, 20], mode: 0,
   ...param("All notes off", "Panic", 2, ["off", "on"], 0) });
@@ -242,6 +297,11 @@ Install
   2. Drag FM1-Chord.amxd onto a MIDI track, before any instrument (a VST is fine).
 
 Play
+  Bank: Factory plays the 118 factory sets; Mine plays your own. To load yours, press "For Ableton" in the editor
+  (it saves all of My sets, including any you fetched from the FM-1, as FM1-Chord-My-sets.fm1bank), then LOAD SETS
+  on the device and pick that file (a single .chordset works too). They are saved with your Live set; LOAD again
+  whenever you've changed them.
+
   Each key from "Key 1" (F3 to start with) up, 27 keys, plays that key's chord in the chosen Set, just as the FM-1 does:
   the same voicings, voice leading, strum and arpeggio. Notes below or above pass through untouched, as do
   controllers. The arpeggio runs at Live's tempo. All 118 factory sets are in it.

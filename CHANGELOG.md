@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10
+
+- **Your own sets in Ableton.** The editor's new **For Ableton** button saves all of My sets (including any you
+  fetched from the FM-1) as one file, `FM1-Chord-My-sets.fm1bank`. On the Live device, **LOAD SETS** picks that file
+  (or a single `.chordset`) and the **Bank** switch goes to **Mine**; Factory is still there. Your sets are saved
+  inside the Live set, so they come back when you reopen it, even if the file has moved.
+- The editor's **Open file** takes a `.fm1bank` too and adds all its sets to My sets.
+
 ## 0.9
 
 - **FM1-Chord for Ableton Live:** a Max for Live **MIDI effect** (no synth: put any instrument or VST after it).

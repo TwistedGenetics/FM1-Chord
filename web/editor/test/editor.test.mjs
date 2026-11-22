@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Engine, Player, Synth } from "../engine.js";
 import { parseChord, chordName, isEmpty, NKEYS } from "../chord.js";
-import { loadPresets, encodeSet } from "../setcodec.js";
+import { loadPresets, encodeSet, bankToFile, bankFromFile, setToFile } from "../setcodec.js";
 import { suggest, suggestNext, fillSet, detectKey, rate } from "../harmony.js";
 import { toMidiFile, render } from "../progression.js";
 import { Device } from "../device.js";
@@ -192,4 +192,15 @@ test("expand a progression: rows of the same chords, then chords that fit; only 
   assert.equal(r.made.filter((m) => m.row === EXPAND_ROWS[0]).length, 4);
   assert.ok(r.made.some((m) => m.row === "new"));
   for (const c of r.chords) assert.ok(encodeSet({ ...sets[0], chords: r.chords }).length > 0 && !isEmpty(c));
+});
+
+test("a bank file (For Ableton) holds My sets byte for byte; a .chordset reads as a bank of one; junk is refused", () => {
+  const lib = loadPresets(JSON.parse(readFileSync(new URL("../presets.json", import.meta.url), "utf8")));
+  const sets = [lib.sets[0], lib.sets[60], lib.sets[117]];
+  const back = bankFromFile(bankToFile(sets));
+  assert.equal(back.length, 3);
+  back.forEach((s, i) => assert.deepEqual(encodeSet(s), encodeSet(sets[i])));
+  assert.deepEqual(encodeSet(bankFromFile(setToFile(sets[1]))[0]), encodeSet(sets[1]));
+  assert.throws(() => bankFromFile('{"format":"other"}'), /not an FM1-Chord/);
+  assert.throws(() => bankFromFile('{"format":"fm1-chord-bank","version":1,"sets":[{"bytes":"00"}]}'), /no sets/);
 });

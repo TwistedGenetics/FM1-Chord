@@ -6,7 +6,7 @@ import {
   chordNotes, chordName, formatChord, midiName, keyName, isBlack, identify, tones,
 } from "./chord.js";
 import {
-  loadPresets, newSet, cloneSet, encodeSet, setToFile, setFromFile, WAVES, MODES, RATES, STRUM_DIRS, ARP_DIRS,
+  loadPresets, newSet, cloneSet, encodeSet, setToFile, setFromFile, bankToFile, bankFromFile, WAVES, MODES, RATES, STRUM_DIRS, ARP_DIRS,
   ensureSx, DIVS, DIV_BEATS, DLY_MAX,
 } from "./setcodec.js";
 import { suggest, suggestNext, fillSet, expandSet, detectKey, roman, keyLabel, rate, SCALE_LABELS, TIERS } from "./harmony.js";
@@ -1029,11 +1029,20 @@ function bindTop() {
     st.mine.splice(st.cur.i, 1); saveMine(); st.dirty = false; openSet("factory", 0);
   };
   $("#b-export").onclick = () => download(`${(st.set.name || "set").trim().replace(/\s+/g, "-")}.chordset`, setToFile(st.set), "application/json");
+  $("#b-bank").onclick = () => {
+    if (!st.mine.length) { toast("Save a set first: My sets go to Ableton"); return; }
+    download("FM1-Chord-My-sets.fm1bank", bankToFile(st.mine), "application/json");
+    toast(`${st.mine.length} set${st.mine.length > 1 ? "s" : ""} saved for Ableton: press LOAD on the device and pick the file`);
+  };
   $("#b-import").onclick = () => $("#importfile").click();
   $("#b-paste").onclick = pasteDialog;
   $("#importfile").onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
-    try { const s = setFromFile(await f.text()); st.mine.push(s); saveMine(); st.dirty = false; openSet("mine", st.mine.length - 1); toast(`Opened ${f.name}`); }
+    try {
+      const sets = bankFromFile(await f.text());
+      st.mine.push(...sets); saveMine(); st.dirty = false; openSet("mine", st.mine.length - sets.length);
+      toast(sets.length > 1 ? `Added ${sets.length} sets from ${f.name}` : `Opened ${f.name}`);
+    }
     catch (err) { toast(err.message); }
     e.target.value = "";
   };

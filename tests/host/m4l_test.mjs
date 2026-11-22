@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { Player } from "../../web/editor/engine.js";
-import { loadPresets, cloneSet } from "../../web/editor/setcodec.js";
+import { loadPresets, cloneSet, bankToFile, setToFile } from "../../web/editor/setcodec.js";
 import { KEY0_NOTE, NKEYS } from "../../web/editor/chord.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -17,6 +17,13 @@ const src = readFileSync(join(dir, "fm1chord.js"), "utf8");
 let fails = 0;
 const check = (ok, what) => { if (!ok) { fails++; console.log("FAIL", what); } };
 
+const FILES = new Map();                  // Max's File, over a fake disk
+class File {
+  constructor(path) { this.text = FILES.get(path); this.isopen = this.text !== undefined; this.position = 0;
+    this.eof = this.isopen ? this.text.length : 0; }
+  readstring(n) { const r = this.text.slice(this.position, this.position + n); this.position += r.length; return r; }
+  close() {}
+}
 function device() {
   const out = [], shown = {}, posts = [];
   const ctx = {
@@ -24,13 +31,14 @@ function device() {
     post: (s) => posts.push(s),
     arrayfromargs: (a) => Array.from(a),
     messagename: "",
-    console,
+    console, File, notified: 0,
   };
+  ctx.notifyclients = () => ctx.notified++;
   vm.createContext(ctx);
-  vm.runInContext(src + "\n;this.__api = { note, tick, tempo, setnum, panic, loadbang, anything, inlets, outlets };", ctx);
+  vm.runInContext(src + "\n;this.__api = { note, tick, tempo, setnum, panic, loadbang, anything, inlets, outlets, read, getvalueof, setvalueof };", ctx);
   const api = ctx.__api;
   const msg = (name, ...a) => { ctx.messagename = name; api.anything(...a); };
-  return { api, out, shown, posts, msg };
+  return { api, out, shown, posts, msg, ctx };
 }
 
 // 1. it loads, with two outlets and every set
@@ -38,7 +46,7 @@ const d = device();
 check(d.api.inlets === 1 && d.api.outlets === 2, "inlets/outlets");
 d.api.loadbang();
 check(/^1\. /.test(d.shown.name || ""), `name shown: ${d.shown.name}`);
-check(/118 sets/.test(d.shown.info || ""), `info: ${d.shown.info}`);
+check(/118 factory sets/.test(d.shown.info || ""), `info: ${d.shown.info}`);
 
 // 2. every key of every set in chord mode, voice leading on, plays what the editor's player plays
 const lib = loadPresets(JSON.parse(readFileSync(join(ROOT, "web/editor/presets.json"), "utf8")));
@@ -94,6 +102,39 @@ for (const [n, v] of o.out) on.set(n, (on.get(n) || 0) + (v ? 1 : -1));
 check([...on.values()].every((c) => c === 0), "a note left hanging");
 o.out.length = 0; o.api.panic(); check(o.out.length === 128, "panic");
 o.msg("nonsense", 1); check(o.posts.some((p) => /nonsense/.test(p)), "unknown message posted");
+
+// 6. my sets: LOAD a bank, play it as the editor would, keep it in the Live set (pattr), switch banks, bad files
+const mine = [5, 40, 77].map((i) => { const x = cloneSet(lib.sets[i]); x.name = "MY " + i; x.chords[0] = x.chords[3]; return x; });
+FILES.set("Mac:/u/My.fm1bank", bankToFile(mine) + " ".repeat(40000));   // longer than one readstring
+FILES.set("Mac:/u/one.chordset", setToFile(mine[2]));
+FILES.set("Mac:/u/junk.txt", "hello");
+const m = device(); m.api.loadbang();
+m.api.read("Mac:/u/My.fm1bank");
+check(/^Mine 1\. MY 5/.test(m.shown.name || "") && m.shown.bank === "1" && /3 of my sets/.test(m.shown.info), `bank loaded: ${m.shown.name} / ${m.shown.info}`);
+check(m.ctx.notified === 1, "pattr told");
+function plays(dev, set, keys) {
+  const ref = [], s2 = cloneSet(set);
+  Object.assign(s2.play, { mode: 0, latch: 0, voice_lead: 1, octave: 0, transpose: 0, humanise: 0 });
+  const p = new Player({ on: (n, v) => ref.push([n, v]), off: (n) => ref.push([n, 0]) }, 1000);
+  dev.out.length = 0;
+  for (const k of keys) { dev.api.note(KEY0_NOTE + k, 90); p.keyEvent(s2, k, 90); dev.api.note(KEY0_NOTE + k, 0); p.keyEvent(s2, k, 0); }
+  return JSON.stringify(dev.out) === JSON.stringify(ref) && ref.length > 0;
+}
+m.api.setnum(2);
+check(plays(m, mine[1], [0, 3, 7, 20]), "my set 2 plays as the editor plays it");
+m.api.setnum(9); check(/^Mine 3\./.test(m.shown.name), "set number held to my 3 sets");
+const saved = m.api.getvalueof();
+check(typeof saved === "string" && saved.length < bankToFile(mine).length + 10, "saved value is the compact bank");
+const r = device(); r.api.loadbang(); r.msg("bank", 1);          // a reopened Live set: the switch, then the value
+check(/no sets loaded/.test(r.shown.info), `Mine before restore: ${r.shown.info}`);
+r.api.setnum(3); r.api.setvalueof(saved);
+check(/^Mine 3\. MY 77/.test(r.shown.name || "") && plays(r, mine[2], [0, 1]), `restored from the Live set: ${r.shown.name}`);
+r.msg("bank", 0); check(/^1\. /.test(r.shown.name), `back to factory: ${r.shown.name}`);
+r.api.read("Mac:/u/one.chordset"); check(/^Mine 1\. MY 77/.test(r.shown.name) && /1 of my sets/.test(r.shown.info), "a .chordset loads");
+r.api.read("Mac:/u/junk.txt"); check(/^LOAD: /.test(r.shown.info) && /^Mine 1\./.test(r.shown.name), `junk refused, sets kept: ${r.shown.info}`);
+r.api.read("Mac:/u/missing"); check(/^LOAD: /.test(r.shown.info), "missing file refused");
+const f = device(); f.api.loadbang(); f.api.setvalueof("none"); f.api.setvalueof("garbage");
+check(/^1\. /.test(f.shown.name) && f.api.getvalueof() === "none", "nothing saved: factory");
 
 console.log(fails ? `m4l_test: ${fails} failed` : `m4l_test: ok (${lib.sets.length} sets, ${compared} note events match the editor)`);
 process.exit(fails ? 1 : 0);
